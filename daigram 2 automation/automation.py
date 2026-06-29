@@ -11,7 +11,7 @@ from openpyxl.chart.label import DataLabelList
 input_file = r"PRP Sample Jun (2).xlsx"
 sheet_name = "OneTrust Assessment"
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-output_file = f"output file D2.xlsx"
+output_file = f"Diagram2_Output_{timestamp}.xlsx"
 
 # =========================
 # LOAD DATA

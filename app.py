@@ -1,6 +1,6 @@
 """
-PRP Automation Studio — AB InBev
-=================================
+PRP Automation Dashboard — AB InBev
+====================================
 Professional Streamlit dashboard for the PRP automation scripts.
 Premium black-and-gold design system.
 """
@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -71,6 +72,13 @@ REGISTRY: list[ScriptEntry] = [
         patch_abs=True,
     ),
     ScriptEntry(
+        "s4", "Diagram 4 — Risk Dashboard",
+        "Cumulative Risk Treatment Progress + History",
+        "diagram4/automation.py",
+        "OneTrust - Risk Export",
+        "Bar chart of open risks vs baseline/target; outputs Risk_Output.xlsx + History.xlsx.",
+    ),
+    ScriptEntry(
         "s1c", "Slide 12 · 1st — Suppliers",
         "Status Overview + Active-by-Zone (combines ACTIVE/Active)",
         "Slide 12 1st daigram Automation/automation3.py",
@@ -97,13 +105,6 @@ REGISTRY: list[ScriptEntry] = [
         "Slide 12 3rd daigram Automation/automation4.py",
         "OneTrust - Risk Export",
         "Most robust 3rd-diagram variant: numeric Aging>90 rule, column auto-detect.",
-    ),
-    ScriptEntry(
-        "s4", "Diagram 4 — Risk Dashboard",
-        "Cumulative Risk Treatment Progress + History",
-        "diagram4/automation.py",
-        "OneTrust - Risk Export",
-        "Bar chart of open risks vs baseline/target; outputs Risk_Output.xlsx + History.xlsx.",
     ),
 ]
 
@@ -244,25 +245,29 @@ def _clean_for_tsv(df: pd.DataFrame) -> pd.DataFrame:
         for c in df.columns
     ]
 
-    for col in df.columns:
-        if pd.api.types.is_numeric_dtype(df[col]):
+    col_names = list(df.columns)
+    out_cols = []
+    for i in range(len(col_names)):
+        series = df.iloc[:, i]
+        if pd.api.types.is_numeric_dtype(series):
             def _fmt(v):
                 if pd.isna(v):
                     return ""
                 if isinstance(v, float) and v.is_integer():
                     return str(int(v))
                 return str(v)
-            df[col] = df[col].apply(_fmt)
+            out_cols.append(series.apply(_fmt).rename(col_names[i]))
         else:
-            df[col] = (
-                df[col]
+            out_cols.append(
+                series
                 .astype(str)
                 .str.replace(r"[\t\r\n]+", " ", regex=True)
                 .str.strip()
-                .apply(lambda x: "" if x.lower() in _NAN_STRINGS else x)
+                .apply(lambda x: "" if str(x).lower() in _NAN_STRINGS else x)
+                .rename(col_names[i])
             )
 
-    return df
+    return pd.concat(out_cols, axis=1)
 
 
 def _chartable(df: pd.DataFrame):
@@ -297,7 +302,7 @@ def _chartable(df: pd.DataFrame):
 # ---------------------------------------------------------------------------
 
 _CSS = """<style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Instrument+Sans:wght@400;500;600;700&display=swap');
 
 :root {
   --bg:       #070707;
@@ -312,12 +317,13 @@ _CSS = """<style>
   --gold-xxlo:#160F05;
   --glow:     rgba(200,168,75,0.08);
   --glow2:    rgba(200,168,75,0.18);
-  --tx1:      #EDE0B8;
-  --tx2:      #A89060;
-  --tx3:      #5E5030;
+  --tx1:      #F0E4C0;
+  --tx2:      #B89A68;
+  --tx3:      #6A5A38;
   --green:    #4DBB80;
   --red:      #D45050;
-  --font:     'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font:         'Instrument Sans', system-ui, -apple-system, sans-serif;
+  --font-display: 'Syne', system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -339,29 +345,50 @@ body, .stApp {
   z-index: 0;
 }
 
-/* Hide Streamlit chrome */
-.stApp > header, [data-testid="stHeader"],
-#MainMenu, footer,
+/* Hide Streamlit chrome — collapse to zero so it takes no space */
+.stApp > header,
+[data-testid="stHeader"],
 [data-testid="stDecoration"],
-[data-testid="stToolbar"] { display: none !important; }
+[data-testid="stToolbar"],
+#MainMenu, footer {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
 
 .main .block-container {
   padding-top: 0 !important;
+  margin-top: 0 !important;
   max-width: 1440px !important;
   padding-left: 0 !important;
   padding-right: 0 !important;
 }
 
+/* Belt-and-suspenders top-gap kill */
+[data-testid="stAppViewContainer"] {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
+[data-testid="stMain"] {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
+.stMainBlockContainer {
+  padding-top: 0 !important;
+}
+
 /* ── Typography ── */
 h1,h2,h3,h4 {
-  font-family: var(--font) !important;
+  font-family: var(--font-display) !important;
   color: var(--tx1) !important;
-  letter-spacing: -0.03em !important;
+  letter-spacing: -0.02em !important;
 }
 .stMarkdown p, .stMarkdown li {
   font-family: var(--font) !important;
   color: var(--tx2) !important;
   font-size: 13px !important;
+  line-height: 1.6 !important;
 }
 .stCaption p { color: var(--tx3) !important; font-size: 11px !important; font-family: var(--font) !important; }
 
@@ -396,23 +423,25 @@ h1,h2,h3,h4 {
   flex-shrink: 0;
 }
 .prp-brand-name {
-  font-size: 16px; font-weight: 800;
-  color: var(--tx1); letter-spacing: -0.025em; line-height: 1.1;
+  font-size: 15px; font-weight: 800;
+  color: var(--tx1); letter-spacing: -0.01em; line-height: 1.1;
+  font-family: var(--font-display);
 }
 .prp-brand-sub {
-  font-size: 10.5px; color: var(--tx3);
-  letter-spacing: 0.06em; text-transform: uppercase;
-  margin-top: 2px; font-weight: 500;
+  font-size: 10px; color: var(--tx3);
+  letter-spacing: 0.1em; text-transform: uppercase;
+  margin-top: 3px; font-weight: 600;
+  font-family: var(--font);
 }
 .prp-header-right { display: flex; align-items: center; gap: 8px; }
 .prp-badge {
-  font-size: 10px; font-weight: 700;
+  font-size: 9.5px; font-weight: 700;
   color: var(--gold);
   background: rgba(200,168,75,0.08);
   border: 1px solid rgba(200,168,75,0.16);
   border-radius: 100px;
   padding: 5px 13px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   font-family: var(--font);
 }
@@ -443,12 +472,12 @@ h1,h2,h3,h4 {
 ═══════════════════════════════════════════════════════ */
 .kpi-strip {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   background: var(--gold-xxlo);
   border: 1px solid var(--gold-xlo);
   border-radius: 16px;
   overflow: hidden;
-  margin: 28px 0 32px;
+  margin: 16px 0 18px;
   gap: 1px;
 }
 @media(max-width:1100px){ .kpi-strip { grid-template-columns: repeat(3,1fr); } }
@@ -456,7 +485,7 @@ h1,h2,h3,h4 {
 
 .kpi-cell {
   background: var(--s1);
-  padding: 22px 26px;
+  padding: 16px 22px;
   transition: background 0.2s;
   position: relative;
 }
@@ -468,36 +497,38 @@ h1,h2,h3,h4 {
   opacity: 0.7;
 }
 .kpi-eyebrow {
-  font-size: 9.5px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.12em;
-  color: var(--tx3); margin-bottom: 10px;
+  font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--tx3); margin-bottom: 11px;
   font-family: var(--font);
 }
 .kpi-value {
-  font-size: 32px; font-weight: 800;
-  line-height: 1; letter-spacing: -0.04em;
+  font-size: 28px; font-weight: 800;
+  line-height: 1; letter-spacing: -0.03em;
   color: var(--gold);
-  font-family: var(--font);
+  font-family: var(--font-display);
 }
-.kpi-value-sm { font-size: 14px; letter-spacing: -0.01em; font-weight: 600; }
-.kpi-detail { font-size: 10.5px; color: var(--tx3); margin-top: 7px; font-family: var(--font); }
+.kpi-value-sm { font-size: 15px; letter-spacing: -0.01em; font-weight: 700; font-family: var(--font) !important; }
+.kpi-detail { font-size: 10px; color: var(--tx3); margin-top: 8px; font-family: var(--font); letter-spacing: 0.01em; }
 
 /* ═══════════════════════════════════════════════════════
    SECTION LABEL
 ═══════════════════════════════════════════════════════ */
 .prp-label {
   display: flex; align-items: center; gap: 10px;
-  font-size: 9.5px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.14em;
-  color: var(--tx3); margin: 28px 0 14px;
+  font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--tx3); margin: 4px 0 6px;
   font-family: var(--font);
 }
+.info-card { margin-top: 8px; }
 .prp-label .prp-label-num {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px;
+  width: 19px; height: 19px;
   background: var(--gold-xlo); border: 1px solid var(--gold-lo);
   border-radius: 5px; font-size: 9px; font-weight: 800;
   color: var(--gold-lo);
+  font-family: var(--font-display);
 }
 .prp-label::after {
   content: ''; flex: 1; height: 1px;
@@ -538,11 +569,11 @@ h1,h2,h3,h4 {
   flex-shrink: 0;
 }
 .prp-card-title {
-  font-size: 13px; font-weight: 700;
-  color: var(--tx1); letter-spacing: -0.015em;
-  font-family: var(--font);
+  font-size: 13.5px; font-weight: 700;
+  color: var(--tx1); letter-spacing: -0.01em;
+  font-family: var(--font-display);
 }
-.prp-card-sub { font-size: 11px; color: var(--tx3); margin-top: 2px; font-family: var(--font); }
+.prp-card-sub { font-size: 11px; color: var(--tx3); margin-top: 3px; font-family: var(--font); letter-spacing: 0.01em; }
 .prp-card-body { padding: 22px 24px; }
 
 /* ── Result metrics band ── */
@@ -554,14 +585,14 @@ h1,h2,h3,h4 {
 }
 .result-cell { background: var(--s1); padding: 16px 22px; }
 .result-cell-label {
-  font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.12em;
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.14em;
   color: var(--tx3); font-weight: 700; font-family: var(--font);
 }
 .result-cell-value {
-  font-size: 24px; font-weight: 800;
-  letter-spacing: -0.04em; color: var(--gold);
-  margin-top: 5px; line-height: 1;
-  font-family: var(--font);
+  font-size: 26px; font-weight: 800;
+  letter-spacing: -0.02em; color: var(--gold);
+  margin-top: 6px; line-height: 1;
+  font-family: var(--font-display);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -585,12 +616,12 @@ h1,h2,h3,h4 {
   box-shadow: 0 0 8px rgba(200,168,75,0.45);
   flex-shrink: 0; margin-top: 3px;
 }
-.info-card-title { font-size: 12px; font-weight: 700; color: var(--tx1); font-family: var(--font); }
-.info-card-desc  { font-size: 11px; color: var(--tx3); margin-top: 3px; line-height: 1.55; font-family: var(--font); }
+.info-card-title { font-size: 13px; font-weight: 700; color: var(--tx1); font-family: var(--font-display); letter-spacing: -0.01em; }
+.info-card-desc  { font-size: 11.5px; color: var(--tx3); margin-top: 4px; line-height: 1.6; font-family: var(--font); }
 .info-card-meta  { display: grid; grid-template-columns: 1fr 1fr; background: var(--gold-xxlo); gap: 1px; }
 .info-meta-cell  { background: var(--s2); padding: 13px 20px; }
-.info-meta-lbl   { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--tx3); font-weight: 700; font-family: var(--font); }
-.info-meta-val   { font-size: 12px; color: var(--gold); font-weight: 600; margin-top: 5px; font-family: var(--font); }
+.info-meta-lbl   { font-size: 9px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--tx3); font-weight: 700; font-family: var(--font); }
+.info-meta-val   { font-size: 12.5px; color: var(--gold); font-weight: 700; margin-top: 5px; font-family: var(--font); }
 
 /* ═══════════════════════════════════════════════════════
    CHART AREA LABEL
@@ -607,8 +638,8 @@ h1,h2,h3,h4 {
 .badge {
   display: inline-flex; align-items: center;
   border-radius: 6px; padding: 3px 10px;
-  font-size: 10px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: 9.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
   font-family: var(--font);
 }
 .badge-green { background: rgba(77,187,128,0.12); color: var(--green); }
@@ -617,14 +648,65 @@ h1,h2,h3,h4 {
 .badge-gray  { background: rgba(94,80,48,0.18);   color: var(--tx3); }
 
 /* ═══════════════════════════════════════════════════════
-   GROUP SELECTOR BUTTONS
+   LEFT NAV PANEL
+═══════════════════════════════════════════════════════ */
+.nav-panel {
+  background: var(--s1);
+  border: 1px solid var(--gold-xlo);
+  border-radius: 16px;
+  overflow: hidden;
+  position: sticky;
+  top: 80px;
+}
+.nav-panel-head {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--gold-xlo);
+  font-size: 8.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.18em;
+  color: var(--tx3); font-family: var(--font);
+}
+.nav-item {
+  display: flex; align-items: center; gap: 11px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--gold-xlo);
+  cursor: pointer;
+  transition: background 0.15s cubic-bezier(0.32,0.72,0,1);
+  text-decoration: none;
+}
+.nav-item:last-child { border-bottom: none; }
+.nav-item:hover { background: var(--s2); }
+.nav-item.active {
+  background: var(--gold-xlo);
+  border-left: 2px solid var(--gold);
+}
+.nav-item-num {
+  width: 22px; height: 22px; flex-shrink: 0;
+  border-radius: 6px;
+  background: var(--gold-xlo);
+  border: 1px solid var(--gold-lo);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; color: var(--gold-lo);
+  font-family: var(--font-display);
+}
+.nav-item.active .nav-item-num {
+  background: var(--gold); color: #000; border-color: var(--gold);
+}
+.nav-item-text {
+  font-size: 12px; font-weight: 600;
+  color: var(--tx2); font-family: var(--font);
+  line-height: 1.3; letter-spacing: -0.005em;
+}
+.nav-item.active .nav-item-text { color: var(--tx1); font-weight: 700; }
+
+/* ═══════════════════════════════════════════════════════
+   BUTTONS (run + generic)
 ═══════════════════════════════════════════════════════ */
 .stButton > button {
   font-family: var(--font) !important;
   border-radius: 9px !important;
-  font-size: 11px !important;
+  font-size: 11.5px !important;
   font-weight: 600 !important;
-  letter-spacing: 0.01em !important;
+  letter-spacing: 0.02em !important;
   transition: all 0.2s cubic-bezier(0.32,0.72,0,1) !important;
 }
 .stButton > button[kind="primary"] {
@@ -654,9 +736,11 @@ h1,h2,h3,h4 {
 .run-wrap .stButton > button[kind="primary"] {
   height: 54px !important;
   font-size: 13px !important;
-  font-weight: 800 !important;
+  font-weight: 700 !important;
   border-radius: 13px !important;
-  letter-spacing: 0.04em !important;
+  letter-spacing: 0.06em !important;
+  font-family: var(--font) !important;
+  text-transform: uppercase !important;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -763,14 +847,20 @@ h1,h2,h3,h4 {
 }
 
 /* ═══════════════════════════════════════════════════════
-   CODE BLOCK
+   CODE BLOCK  (used for aligned table display)
 ═══════════════════════════════════════════════════════ */
 [data-testid="stCode"], .stCodeBlock pre {
   background: var(--s3) !important;
   border: 1px solid var(--gold-xlo) !important;
   border-radius: 10px !important;
-  color: var(--tx2) !important;
-  font-size: 11.5px !important;
+  color: var(--tx1) !important;
+  font-size: 12px !important;
+  line-height: 1.7 !important;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace !important;
+}
+/* Column headers in the code block get gold colour */
+[data-testid="stCode"] pre > code > span:first-child {
+  color: var(--gold) !important;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -798,6 +888,87 @@ h1,h2,h3,h4 {
 }
 
 /* ═══════════════════════════════════════════════════════
+   ANIMATIONS
+═══════════════════════════════════════════════════════ */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-14px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes pulseGold {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(200,168,75,0); }
+  50%       { box-shadow: 0 0 0 6px rgba(200,168,75,0.18); }
+}
+@keyframes scanLine {
+  0%   { left: -60%; }
+  100% { left: 110%; }
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(32px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.anim-slide-left { animation: slideInLeft 0.38s cubic-bezier(0.32,0.72,0,1) both; }
+.anim-slide-up   { animation: slideUp     0.42s cubic-bezier(0.32,0.72,0,1) both; }
+.anim-fade-up    { animation: fadeUp      0.5s  cubic-bezier(0.32,0.72,0,1) both; }
+
+/* stagger children */
+.anim-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.anim-stagger > *:nth-child(2) { animation-delay: 60ms; }
+.anim-stagger > *:nth-child(3) { animation-delay: 120ms; }
+.anim-stagger > *:nth-child(4) { animation-delay: 180ms; }
+
+/* file-ready scan shimmer */
+.file-ready {
+  position: relative; overflow: hidden;
+  margin-top: 8px; padding: 10px 16px;
+  background: rgba(77,187,128,0.07);
+  border: 1px solid rgba(77,187,128,0.22);
+  border-radius: 10px;
+  display: flex; align-items: center; gap: 10px;
+  animation: slideInLeft 0.38s cubic-bezier(0.32,0.72,0,1) both;
+}
+.file-ready::after {
+  content: '';
+  position: absolute; top: 0; bottom: 0; width: 60%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+  animation: scanLine 1.1s cubic-bezier(0.4,0,0.6,1) 0.38s 1 both;
+  pointer-events: none;
+}
+.file-ready-tick  { color: var(--green); font-size: 11px; font-weight: 700; font-family: var(--font); }
+.file-ready-name  { color: var(--tx1);   font-size: 12px; font-weight: 600; font-family: var(--font); }
+.file-ready-size  { color: var(--tx3);   font-size: 11px; font-family: var(--font); margin-left: auto; }
+
+/* results reveal wrapper */
+.results-reveal { animation: fadeUp 0.52s cubic-bezier(0.32,0.72,0,1) both; }
+
+/* thumbnail chart grid */
+.chart-thumb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 10px 0 0;
+}
+.chart-thumb {
+  background: var(--s2);
+  border: 1px solid var(--gold-xlo);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: slideUp 0.42s cubic-bezier(0.32,0.72,0,1) both;
+}
+.chart-thumb-label {
+  font-size: 9.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--tx3); padding: 10px 12px 6px;
+  font-family: var(--font);
+  border-bottom: 1px solid var(--gold-xlo);
+}
+.chart-thumb img { display: block; width: 100%; height: auto; max-height: 160px; object-fit: contain; }
+
+/* ═══════════════════════════════════════════════════════
    DIVIDER
 ═══════════════════════════════════════════════════════ */
 hr { border-color: var(--gold-xlo) !important; margin: 24px 0 !important; }
@@ -817,7 +988,300 @@ hr { border-color: var(--gold-xlo) !important; margin: 24px 0 !important; }
   border-color: var(--gold-lo) !important;
   box-shadow: 0 0 0 2px rgba(200,168,75,0.12) !important;
 }
+
+/* ═══════════════════════════════════════════════════════
+   HIDE NAV DUPLICATE BUTTONS
+   Nav buttons are isolated in col_nav (first column).
+   Run button lives in col_input (second column).
+═══════════════════════════════════════════════════════ */
+[data-testid="stHorizontalBlock"]:first-of-type
+[data-testid="stColumn"]:first-child
+.stButton,
+[data-testid="stHorizontalBlock"]:first-of-type
+[data-testid="stColumn"]:first-child
+iframe {
+  display: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   LEFT CONFIG PANEL — sticky scroll
+═══════════════════════════════════════════════════════ */
+.left-config-panel {
+  position: sticky;
+  top: 80px;
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gold-xlo) transparent;
+}
+.left-config-panel::-webkit-scrollbar { width: 3px; }
+.left-config-panel::-webkit-scrollbar-track { background: transparent; }
+.left-config-panel::-webkit-scrollbar-thumb { background: var(--gold-xlo); border-radius: 3px; }
+
+/* ═══════════════════════════════════════════════════════
+   RIGHT OUTPUT PANEL
+═══════════════════════════════════════════════════════ */
+.right-output-panel {
+  min-height: 500px;
+}
+
+/* ═══════════════════════════════════════════════════════
+   EMPTY STATE
+═══════════════════════════════════════════════════════ */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 420px;
+  border: 1.5px dashed var(--gold-xlo);
+  border-radius: 20px;
+  margin-top: 16px;
+  padding: 48px 32px;
+  background: radial-gradient(ellipse at 50% 80%, rgba(200,168,75,0.03) 0%, transparent 65%);
+}
+.empty-state-icon {
+  font-size: 42px;
+  margin-bottom: 20px;
+  opacity: 0.2;
+  color: var(--gold);
+  line-height: 1;
+}
+.empty-state-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--tx3);
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+  margin-bottom: 10px;
+}
+.empty-state-desc {
+  font-size: 12px;
+  color: var(--tx3);
+  font-family: var(--font);
+  text-align: center;
+  max-width: 300px;
+  line-height: 1.7;
+}
+
+/* ═══════════════════════════════════════════════════════
+   DOWNLOAD STRIP (top of right panel)
+═══════════════════════════════════════════════════════ */
+.dl-strip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.dl-strip-title {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--tx3);
+  font-weight: 700;
+  font-family: var(--font);
+}
+
+/* ═══════════════════════════════════════════════════════
+   INPUT FIELD LABEL
+═══════════════════════════════════════════════════════ */
+.input-section-box {
+  background: var(--s2);
+  border: 1px solid var(--gold-xlo);
+  border-radius: 14px;
+  padding: 16px 18px 18px;
+  margin-bottom: 4px;
+}
+.input-section-label {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--tx3);
+  font-family: var(--font);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.input-section-label::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 6px var(--gold);
+}
+
+/* ═══════════════════════════════════════════════════════
+   NAV PANEL — active glow + depth
+═══════════════════════════════════════════════════════ */
+.nav-item.active {
+  background: linear-gradient(90deg, rgba(200,168,75,0.12), rgba(200,168,75,0.04)) !important;
+  border-left: 2px solid var(--gold) !important;
+  box-shadow: inset 0 0 16px rgba(200,168,75,0.05) !important;
+}
+.nav-item.active .nav-item-num {
+  background: var(--gold) !important;
+  color: #000 !important;
+  border-color: var(--gold) !important;
+  box-shadow: 0 0 8px rgba(200,168,75,0.4) !important;
+}
+.nav-item.active .nav-item-text {
+  color: var(--tx1) !important;
+  font-weight: 700 !important;
+}
+.nav-item:hover:not(.active) {
+  background: rgba(200,168,75,0.03) !important;
+  border-left: 1px solid rgba(200,168,75,0.12) !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   RADIO — premium selectable cards
+═══════════════════════════════════════════════════════ */
+[data-baseweb="radio-group"] {
+  flex-direction: column !important;
+  gap: 6px !important;
+}
+[data-baseweb="radio-group"] [data-baseweb="radio"] {
+  background: var(--s2) !important;
+  border: 1px solid var(--gold-xlo) !important;
+  border-radius: 10px !important;
+  padding: 10px 14px !important;
+  gap: 10px !important;
+  align-items: center !important;
+  transition: border-color 0.18s cubic-bezier(0.32,0.72,0,1),
+              background   0.18s cubic-bezier(0.32,0.72,0,1) !important;
+  cursor: pointer !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+}
+[data-baseweb="radio-group"] [data-baseweb="radio"]:hover {
+  border-color: rgba(200,168,75,0.22) !important;
+  background: rgba(200,168,75,0.025) !important;
+}
+[data-baseweb="radio-group"] [data-baseweb="radio"]:has([aria-checked="true"]) {
+  background: linear-gradient(90deg, rgba(200,168,75,0.10), rgba(200,168,75,0.04)) !important;
+  border-color: rgba(200,168,75,0.28) !important;
+  border-left-width: 2px !important;
+  border-left-color: var(--gold) !important;
+}
+[data-baseweb="radio-group"] [role="radio"] {
+  border-color: var(--gold-lo) !important;
+  background: transparent !important;
+  flex-shrink: 0 !important;
+  width: 14px !important;
+  height: 14px !important;
+}
+[data-baseweb="radio-group"] [role="radio"][aria-checked="true"] {
+  background: var(--gold) !important;
+  border-color: var(--gold) !important;
+  box-shadow: 0 0 6px rgba(200,168,75,0.4) !important;
+}
+[data-baseweb="radio-group"] [data-testid="stMarkdownContainer"] p {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: var(--tx2) !important;
+  font-family: var(--font) !important;
+  line-height: 1.4 !important;
+  margin: 0 !important;
+  letter-spacing: -0.005em !important;
+}
+[data-baseweb="radio-group"] [data-baseweb="radio"]:has([aria-checked="true"])
+[data-testid="stMarkdownContainer"] p {
+  color: var(--tx1) !important;
+  font-weight: 700 !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   RADIO LABEL (the "Copy format" header text)
+═══════════════════════════════════════════════════════ */
+[data-testid="stRadio"] > label > div > p {
+  font-size: 9px !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.14em !important;
+  color: var(--tx3) !important;
+  font-family: var(--font) !important;
+  margin-bottom: 8px !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   FILE UPLOADER — more dramatic hover
+═══════════════════════════════════════════════════════ */
+[data-testid="stFileUploader"]:hover {
+  border-color: var(--gold) !important;
+  box-shadow: 0 0 0 1px rgba(200,168,75,0.08),
+              0 0 28px rgba(200,168,75,0.06) !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   SECTION LABEL number badge — more prominent
+═══════════════════════════════════════════════════════ */
+.prp-label .prp-label-num {
+  background: var(--gold-xlo) !important;
+  border: 1px solid var(--gold-lo) !important;
+  color: var(--gold) !important;
+  font-weight: 900 !important;
+}
+
+/* top-gap handled in chrome-hide block above */
+
+/* ═══════════════════════════════════════════════════════
+   STATUS BAR  (replaces KPI strip)
+═══════════════════════════════════════════════════════ */
+.status-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 44px;
+  background: var(--gold-xxlo);
+  border-bottom: 1px solid var(--gold-xlo);
+  font-family: var(--font); font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.status-sep { color: var(--gold-xlo); }
+.status-item { color: var(--tx3); }
+
+/* ═══════════════════════════════════════════════════════
+   MAIN LAYOUT  (content area padding)
+═══════════════════════════════════════════════════════ */
+.main-layout { padding: 6px 32px 0; }
 </style>"""
+
+
+# ---------------------------------------------------------------------------
+# Nav JS wiring (runs in components.html iframe — same origin → parent access)
+# ---------------------------------------------------------------------------
+
+_NAV_JS = """<script>
+(function() {
+  var doc = window.parent.document;
+  function setup() {
+    var items = doc.querySelectorAll('.nav-item');
+    if (!items.length) return;
+    var hb = doc.querySelector('[data-testid="stHorizontalBlock"]');
+    if (!hb) return;
+    var col = hb.querySelector('[data-testid="stColumn"]');
+    if (!col) return;
+    var btns = Array.from(col.querySelectorAll('button'));
+    if (!btns.length) return;
+    items.forEach(function(el, i) {
+      if (el._navW) return;
+      el._navW = 1;
+      el.addEventListener('click', function() {
+        if (btns[i]) btns[i].click();
+      });
+    });
+  }
+  var t;
+  new MutationObserver(function() { clearTimeout(t); t = setTimeout(setup, 160); })
+    .observe(doc.body, { childList: true, subtree: true });
+  [350, 800, 1600].forEach(function(d) { setTimeout(setup, d); });
+})();
+</script>"""
 
 
 # ---------------------------------------------------------------------------
@@ -830,7 +1294,7 @@ def _header_html() -> str:
   <div class="prp-logo">
     <div class="prp-logo-mark">&#9678;</div>
     <div>
-      <div class="prp-brand-name">PRP Automation Studio</div>
+      <div class="prp-brand-name">PRP Automation Dashboard</div>
       <div class="prp-brand-sub">AB InBev &middot; TPRM &amp; Risk Intelligence</div>
     </div>
   </div>
@@ -847,19 +1311,21 @@ def _kpi_strip_html(result: "RunResult | None" = None) -> str:
     n_tables  = sum(len(s) for s in result.tables.values()) if result else 0
 
     if result and result.ok:
-        status = '<span class="badge badge-green">&#9679;&nbsp; Success</span>'
+        status_html = '<span class="badge badge-green" style="font-size:11px;">&#9679;&nbsp; Success</span>'
+        status_detail = "Last run completed"
     elif result:
-        status = '<span class="badge badge-red">&#9679;&nbsp; Error</span>'
+        status_html = '<span class="badge badge-red" style="font-size:11px;">&#9679;&nbsp; Error</span>'
+        status_detail = f"Exit code {result.returncode}"
     else:
-        status = '<span class="badge badge-gray">&mdash;&nbsp; Idle</span>'
+        status_html = '<span class="badge badge-gray" style="font-size:11px;">&mdash;&nbsp; Ready</span>'
+        status_detail = "Upload &amp; run a report"
 
     cells = [
-        ("Total Reports",  "8",                              "Automation scripts"),
-        ("Script Groups",  "7",                              "Diagram &middot; Slide 12"),
-        ("Input Sheets",   "3",                              "TPRM &middot; OneTrust &middot; Risk"),
-        ("Output Files",   str(n_outputs) if result else "—", "From last run"),
-        ("Data Tables",    str(n_tables)  if result else "—", "Sheets in output"),
-        ("Run Status",     status,                           "&nbsp;"),
+        ("Reports",      "8",                                       "Automation scripts"),
+        ("Input Sheets", "3",                                       "TPRM &middot; OneTrust &middot; Risk"),
+        ("Output Files", str(n_outputs) if result else "&mdash;",  "From last run"),
+        ("Data Tables",  str(n_tables)  if result else "&mdash;",  "Sheets in output"),
+        ("Run Status",   status_html,                               status_detail),
     ]
 
     html = ""
@@ -886,13 +1352,14 @@ def _section_label(num: str, text: str) -> str:
 
 def _info_card_html(sheet: str, notes: str, group: str) -> str:
     return f"""
-<div class="info-card">
+<div class="info-card anim-slide-up">
   <div class="info-card-head">
     <div class="info-card-dot"></div>
-    <div>
+    <div style="flex:1;min-width:0;">
       <div class="info-card-title">{group}</div>
       <div class="info-card-desc">{notes}</div>
     </div>
+    <span class="badge badge-gold" style="flex-shrink:0;align-self:flex-start;">AB InBev</span>
   </div>
   <div class="info-card-meta">
     <div class="info-meta-cell">
@@ -908,54 +1375,220 @@ def _info_card_html(sheet: str, notes: str, group: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Live chart builder  (Plotly — no external CDN, already installed with Streamlit)
+# ---------------------------------------------------------------------------
+
+def _build_plotly_bar(chart_df: pd.DataFrame, title: str = ""):
+    """Return a styled Plotly Figure matching the dark-gold design system."""
+    import plotly.graph_objects as go
+
+    gold_palette = [
+        "#C8A84B", "#4DBB80", "#D45050",
+        "#6496D2", "#BE6EBE", "#DCA03C",
+    ]
+    fill_palette = [
+        "rgba(200,168,75,0.82)", "rgba(77,187,128,0.75)",
+        "rgba(212,80,80,0.72)", "rgba(100,150,210,0.72)",
+        "rgba(190,110,190,0.72)", "rgba(220,160,60,0.75)",
+    ]
+
+    x_labels = chart_df.index.astype(str).tolist()
+    fig = go.Figure()
+    for i, col in enumerate(chart_df.columns):
+        y_vals = pd.to_numeric(chart_df[col], errors="coerce").fillna(0).tolist()
+        fig.add_trace(go.Bar(
+            name=str(col),
+            x=x_labels,
+            y=y_vals,
+            marker=dict(
+                color=fill_palette[i % len(fill_palette)],
+                line=dict(color=gold_palette[i % len(gold_palette)], width=0),
+                cornerradius=4,
+            ),
+            hovertemplate=(
+                "<b>%{x}</b><br>"
+                + str(col) + ": <b>%{y:,.0f}</b><extra></extra>"
+            ),
+        ))
+
+    grid_color = "rgba(34,27,11,0.9)"
+    tick_color = "#A89060"
+    font_cfg   = dict(family="'Instrument Sans', system-ui, sans-serif", color=tick_color, size=11)
+
+    fig.update_layout(
+        title=dict(
+            text=title,
+            font=dict(family="'Syne', system-ui", color="#A89060", size=11),
+            x=0, xanchor="left", pad=dict(l=4, b=12),
+        ) if title else None,
+        paper_bgcolor="#0d0d0d",
+        plot_bgcolor="#0d0d0d",
+        font=font_cfg,
+        barmode="group",
+        bargap=0.22,
+        bargroupgap=0.06,
+        margin=dict(l=48, r=20, t=40 if title else 20, b=60),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+            font=dict(family="'Instrument Sans', system-ui", color="#A89060", size=10),
+            bgcolor="rgba(0,0,0,0)",
+            bordercolor="rgba(0,0,0,0)",
+        ),
+        xaxis=dict(
+            gridcolor=grid_color, linecolor="#2A1F08", tickcolor="#2A1F08",
+            tickfont=dict(family="'Instrument Sans', system-ui", color=tick_color, size=10),
+            tickangle=-25,
+        ),
+        yaxis=dict(
+            gridcolor=grid_color, linecolor="#2A1F08", tickcolor="#2A1F08",
+            tickfont=dict(family="'Instrument Sans', system-ui", color=tick_color, size=10),
+            zeroline=False,
+        ),
+        hoverlabel=dict(
+            bgcolor="#191919",
+            bordercolor="#221B0B",
+            font=dict(family="'Instrument Sans', system-ui", color="#F0E4C0", size=12),
+        ),
+        # Animate bars growing in from zero on first render
+        transition=dict(duration=700, easing="cubic-in-out"),
+    )
+    return fig
+
+
+# ---------------------------------------------------------------------------
 # Results renderer
 # ---------------------------------------------------------------------------
 
 def render_results(entry: ScriptEntry, result: RunResult, fmt: str) -> None:
-    n_tables = sum(len(s) for s in result.tables.values())
+    st.markdown('<div class="results-reveal">', unsafe_allow_html=True)
 
-    if result.ok:
-        status_badge = '<span class="badge badge-green">&#10003;&nbsp; Completed</span>'
-        dot_color    = "var(--green)"
-    else:
-        status_badge = f'<span class="badge badge-red">&#10007;&nbsp; Error &mdash; code {result.returncode}</span>'
-        dot_color    = "var(--red)"
+    if not result.outputs:
+        st.warning("The script produced no output file.")
+        st.markdown('</div>', unsafe_allow_html=True)
+        return
 
-    # ── Run summary card ────────────────────────────────────────────────────
+    # ── 1. Download Options ──────────────────────────────────────────────────
     st.markdown(f"""
-<div class="prp-card" style="margin-bottom:20px;">
-  <div class="prp-card-accent-bar"></div>
-  <div class="prp-card-header">
-    <div class="prp-card-title-group">
-      <div class="prp-card-dot" style="background:{dot_color};box-shadow:0 0 10px {dot_color};"></div>
-      <div>
-        <div class="prp-card-title">{entry.label}</div>
-        <div class="prp-card-sub">{entry.group}</div>
-      </div>
-    </div>
-    <div>{status_badge}</div>
+<div style="display:flex;align-items:center;justify-content:space-between;
+  padding:10px 0 10px;margin-bottom:10px;
+  border-bottom:1px solid var(--gold-xlo);">
+  <div style="display:flex;align-items:center;gap:8px;">
+    <div style="width:7px;height:7px;border-radius:50%;background:var(--gold);
+      box-shadow:0 0 8px rgba(200,168,75,0.5);"></div>
+    <span style="font-size:15px;font-weight:700;color:var(--tx1);
+      font-family:var(--font-display);letter-spacing:0.06em;text-transform:uppercase;">
+      Download Options</span>
   </div>
-  <div class="result-band">
-    <div class="result-cell">
-      <div class="result-cell-label">Script ID</div>
-      <div class="result-cell-value">{entry.id.upper()}</div>
-    </div>
-    <div class="result-cell">
-      <div class="result-cell-label">Output Files</div>
-      <div class="result-cell-value">{len(result.outputs)}</div>
-    </div>
-    <div class="result-cell">
-      <div class="result-cell-label">Data Tables</div>
-      <div class="result-cell-value">{n_tables}</div>
-    </div>
-    <div class="result-cell">
-      <div class="result-cell-label">Exit Code</div>
-      <div class="result-cell-value" style="color:{'var(--green)' if result.ok else 'var(--red)'};">{result.returncode}</div>
-    </div>
-  </div>
+  <span class="badge badge-gold">{len(result.outputs)} file{'s' if len(result.outputs) != 1 else ''}</span>
 </div>""", unsafe_allow_html=True)
 
-    # ── Script log ──────────────────────────────────────────────────────────
+    dl_cols = st.columns(min(3, len(result.outputs)))
+    for i, (name, data) in enumerate(result.outputs):
+        mime = (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            if name.lower().endswith(".xlsx") else
+            "image/png" if name.lower().endswith(".png") else
+            "application/octet-stream"
+        )
+        dl_cols[i % len(dl_cols)].download_button(
+            f"⬇  {name}", data=data, file_name=name, mime=mime,
+            key=f"dl_{entry.id}_{i}", use_container_width=True,
+        )
+
+    st.markdown('<div style="margin-bottom:28px;"></div>', unsafe_allow_html=True)
+
+    # ── Pre-process sheets ───────────────────────────────────────────────────
+    processed_sheets: list[tuple[str, str, pd.DataFrame]] = []
+    for fname, sheets in result.tables.items():
+        for sheet_name, df in sheets.items():
+            processed_sheets.append((fname, sheet_name, _trim_sparse_cols(_trim_sparse_rows(df))))
+
+    # ── 2. Charts ────────────────────────────────────────────────────────────
+    charts_rendered = 0
+    for fname, sheet_name, df in processed_sheets:
+        chart_df = _chartable(df)
+        if chart_df is not None:
+            if charts_rendered == 0:
+                st.markdown(
+                    '<div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.12em;'
+                    'color:var(--tx3);font-weight:700;margin:0 0 14px;font-family:var(--font);">'
+                    'Charts</div>',
+                    unsafe_allow_html=True,
+                )
+            st.plotly_chart(
+                _build_plotly_bar(chart_df, sheet_name),
+                use_container_width=True,
+                config={"displayModeBar": False},
+            )
+            charts_rendered += 1
+
+    # ── 3. Output Preview ────────────────────────────────────────────────────
+    if processed_sheets:
+        st.markdown(
+            '<div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.12em;'
+            'color:var(--tx3);font-weight:700;margin:18px 0 14px;font-family:var(--font);">'
+            'Output Preview</div>',
+            unsafe_allow_html=True,
+        )
+        for fname, sheet_name, df in processed_sheets:
+            row_count = len(df)
+            col_count = len(df.columns)
+            st.markdown(f"""
+<div class="prp-card" style="margin-bottom:14px;">
+  <div class="prp-card-header">
+    <div class="prp-card-title-group">
+      <div class="prp-card-dot"></div>
+      <div>
+        <div class="prp-card-title">{sheet_name}</div>
+        <div class="prp-card-sub">{fname} &nbsp;&middot;&nbsp; {row_count} rows &times; {col_count} cols</div>
+      </div>
+    </div>
+  </div>
+  <div class="prp-card-body">""", unsafe_allow_html=True)
+
+            st.dataframe(
+                df.head(50),
+                use_container_width=True,
+                hide_index=True,
+                height=min(300, 38 + len(df.head(50)) * 35),
+            )
+            if row_count > 50:
+                st.markdown(
+                    f'<div style="font-size:10.5px;color:var(--tx3);margin-top:6px;'
+                    f'font-family:var(--font);">Showing 50 of {row_count} rows — '
+                    f'download the .xlsx for the full dataset.</div>',
+                    unsafe_allow_html=True,
+                )
+
+            safe_key = f"cp_{entry.id}_{fname}_{sheet_name}".replace(" ", "_")
+            with st.expander(f"Copy as text  ·  {sheet_name}"):
+                clean_df = _clean_for_tsv(df)
+                if fmt == "Markdown":
+                    try:
+                        display_text = clean_df.to_markdown(index=False)
+                    except Exception:
+                        display_text = clean_df.to_string(index=False)
+                    st.code(display_text, language=None)
+                else:
+                    try:
+                        display_text = clean_df.to_string(index=False)
+                    except Exception:
+                        display_text = clean_df.to_csv(sep="\t", index=False)
+                    st.code(display_text, language=None)
+                    st.markdown(
+                        '<div style="font-size:9px;text-transform:uppercase;letter-spacing:0.12em;'
+                        'color:var(--tx3);font-family:var(--font);margin:10px 0 4px;">'
+                        'Raw TSV &mdash; Ctrl+A &rarr; Ctrl+C &rarr; paste into Excel</div>',
+                        unsafe_allow_html=True,
+                    )
+                    tsv = clean_df.to_csv(sep="\t", index=False, lineterminator="\r\n")
+                    st.text_area("", tsv, height=90, key=safe_key,
+                                 label_visibility="collapsed")
+
+            st.markdown("</div></div>", unsafe_allow_html=True)
+
+    # ── 4. Script log ────────────────────────────────────────────────────────
+    st.markdown('<div style="margin-top:24px;"></div>', unsafe_allow_html=True)
     with st.expander("Script log  ·  stdout / stderr", expanded=not result.ok):
         if result.stdout.strip():
             st.code(result.stdout, language="text")
@@ -973,135 +1606,7 @@ def render_results(entry: ScriptEntry, result: RunResult, fmt: str) -> None:
                 unsafe_allow_html=True,
             )
 
-    if not result.outputs:
-        st.warning("The script produced no output file.")
-        return
-
-    # ── Downloads ───────────────────────────────────────────────────────────
-    st.markdown(
-        '<div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.12em;'
-        'color:var(--tx3);font-weight:700;margin:28px 0 12px;font-family:var(--font);">'
-        'Downloads</div>',
-        unsafe_allow_html=True,
-    )
-    dl_cols = st.columns(min(4, len(result.outputs)))
-    for i, (name, data) in enumerate(result.outputs):
-        mime = (
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            if name.lower().endswith(".xlsx") else
-            "image/png" if name.lower().endswith(".png") else
-            "application/octet-stream"
-        )
-        icon = "⬇  " + name
-        dl_cols[i % len(dl_cols)].download_button(
-            icon, data=data, file_name=name, mime=mime,
-            key=f"dl_{entry.id}_{i}", use_container_width=True,
-        )
-
-    # ── Chart preview ───────────────────────────────────────────────────────
-    png_outputs = [(n, d) for n, d in result.outputs if n.lower().endswith(".png")]
-    rendered_any = False
-
-    if png_outputs:
-        st.markdown(
-            '<div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.12em;'
-            'color:var(--tx3);font-weight:700;margin:28px 0 12px;font-family:var(--font);">'
-            'Chart Preview</div>',
-            unsafe_allow_html=True,
-        )
-        img_cols = st.columns(len(png_outputs))
-        for col, (name, data) in zip(img_cols, png_outputs):
-            with col:
-                st.image(data, caption=name, use_container_width=True)
-        rendered_any = True
-
-    chart_items = []
-    for fname, sheets in result.tables.items():
-        for sheet_name, df in sheets.items():
-            cdf = _chartable(df)
-            if cdf is not None and len(cdf.columns) <= 6:
-                chart_items.append((fname, sheet_name, cdf))
-
-    if chart_items:
-        st.markdown(
-            '<div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.12em;'
-            'color:var(--tx3);font-weight:700;margin:28px 0 12px;font-family:var(--font);">'
-            'Data Charts</div>',
-            unsafe_allow_html=True,
-        )
-        n_cols = min(2, len(chart_items))
-        chart_cols = st.columns(n_cols) if n_cols > 1 else [st]
-        for idx, (fname, sheet_name, cdf) in enumerate(chart_items):
-            with chart_cols[idx % n_cols]:
-                st.markdown(
-                    f'<div class="chart-label">{sheet_name}</div>',
-                    unsafe_allow_html=True,
-                )
-                try:
-                    st.bar_chart(cdf, stack=True, use_container_width=True)
-                    rendered_any = True
-                except Exception:
-                    pass
-
-    if not rendered_any and not png_outputs:
-        st.markdown(
-            '<div style="color:var(--tx3);font-size:12px;padding:10px 0;'
-            'font-family:var(--font);">No chartable data detected in output.</div>',
-            unsafe_allow_html=True,
-        )
-    elif chart_items and not png_outputs:
-        st.markdown(
-            '<div style="color:var(--tx3);font-size:10.5px;margin-top:6px;'
-            'font-family:var(--font);">Re-rendered from output data — '
-            'downloaded .xlsx contains the original styled charts.</div>',
-            unsafe_allow_html=True,
-        )
-
-    # ── Output tables ────────────────────────────────────────────────────────
-    st.markdown(
-        '<div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.12em;'
-        'color:var(--tx3);font-weight:700;margin:28px 0 12px;font-family:var(--font);">'
-        'Output Tables</div>',
-        unsafe_allow_html=True,
-    )
-    for fname, sheets in result.tables.items():
-        for sheet_name, df in sheets.items():
-            df = _trim_sparse_rows(df)
-            df = _trim_sparse_cols(df)
-            st.markdown(f"""
-<div class="prp-card" style="margin-bottom:16px;">
-  <div class="prp-card-header">
-    <div class="prp-card-title-group">
-      <div class="prp-card-dot"></div>
-      <div>
-        <div class="prp-card-title">{sheet_name}</div>
-        <div class="prp-card-sub">{fname} &nbsp;&middot;&nbsp; {len(df)} rows &times; {len(df.columns)} cols</div>
-      </div>
-    </div>
-  </div>
-  <div class="prp-card-body">""", unsafe_allow_html=True)
-
-            st.dataframe(df, use_container_width=True, hide_index=True)
-
-            safe_key = f"cp_{entry.id}_{fname}_{sheet_name}".replace(" ", "_")
-            with st.expander(f"Copy as text  ·  {sheet_name}"):
-                if fmt == "Markdown":
-                    try:
-                        text = df.to_markdown(index=False)
-                    except Exception:
-                        text = df.to_csv(sep="\t", index=False)
-                    st.text_area("", text, height=200, key=safe_key + "_md",
-                                 label_visibility="collapsed")
-                else:
-                    tsv = _clean_for_tsv(df).to_csv(sep="\t", index=False, lineterminator="\r\n")
-                    st.caption(
-                        "Click inside · Ctrl+A to select all · Ctrl+C to copy · "
-                        "paste into Excel — columns split automatically."
-                    )
-                    st.text_area("", tsv, height=200, key=safe_key,
-                                 label_visibility="collapsed")
-
-            st.markdown("</div></div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)  # /results-reveal
 
 
 # ---------------------------------------------------------------------------
@@ -1110,7 +1615,7 @@ def render_results(entry: ScriptEntry, result: RunResult, fmt: str) -> None:
 
 def main() -> None:
     st.set_page_config(
-        page_title="PRP Automation Studio — AB InBev",
+        page_title="PRP Automation Dashboard — AB InBev",
         page_icon="⬡",
         layout="wide",
         initial_sidebar_state="collapsed",
@@ -1121,81 +1626,95 @@ def main() -> None:
 
     last_result: "RunResult | None" = st.session_state.get("last_result")
 
-    # ── KPI strip ─────────────────────────────────────────────────────────
-    st.markdown('<div class="prp-wrap">', unsafe_allow_html=True)
-    st.markdown(_kpi_strip_html(last_result), unsafe_allow_html=True)
+    groups: dict[str, list[ScriptEntry]] = {}
+    for e in REGISTRY:
+        groups.setdefault(e.group, []).append(e)
+    group_names = list(groups.keys())
 
-    # ── Input + Selector (2 columns) ──────────────────────────────────────
-    col_up, col_sel = st.columns([5, 7], gap="large")
+    _short = {
+        group_names[0]: "Diagram 1",
+        group_names[1]: "Diagram 2",
+        group_names[2]: "Diagram 3",
+        group_names[3]: "Diagram 4",
+        group_names[4]: "Slide 12 · 1st",
+        group_names[5]: "Slide 12 · 2nd",
+        group_names[6]: "Slide 12 · 3rd",
+    }
 
-    with col_up:
-        st.markdown(_section_label("1", "Upload Workbook"), unsafe_allow_html=True)
+    if "active_group" not in st.session_state:
+        st.session_state["active_group"] = group_names[0]
+
+    # ── 3-column layout: nav | inputs | output ─────────────────────────────
+    st.markdown('<div class="main-layout">', unsafe_allow_html=True)
+    col_nav, col_input, col_output = st.columns([2, 3, 7], gap="small")
+
+    # ── NAV column ─────────────────────────────────────────────────────────
+    with col_nav:
+        st.markdown(_section_label("1", "Report"), unsafe_allow_html=True)
+        nav_html = '<div class="nav-panel"><div class="nav-panel-head">Type</div>'
+        for idx, gname in enumerate(group_names, 1):
+            is_active = st.session_state["active_group"] == gname
+            active_cls = " active" if is_active else ""
+            nav_html += (
+                f'<div class="nav-item{active_cls}">'
+                f'<div class="nav-item-num">{idx}</div>'
+                f'<div class="nav-item-text">{_short.get(gname, gname)}</div>'
+                f'</div>'
+            )
+        nav_html += '</div>'
+        st.markdown(nav_html, unsafe_allow_html=True)
+
+        # Hidden Streamlit buttons — CSS hides, JS wires .nav-item clicks to them
+        for gname in group_names:
+            if st.button(
+                _short.get(gname, gname),
+                key=f"grp_{gname}",
+                type="secondary",
+                use_container_width=True,
+            ):
+                st.session_state["active_group"] = gname
+                st.rerun()
+        components.html(_NAV_JS, height=0, scrolling=False)
+
+    # ── INPUT column ────────────────────────────────────────────────────────
+    with col_input:
+        st.markdown(_section_label("2", "Input File"), unsafe_allow_html=True)
+        st.markdown('<div class="input-section-box">', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="input-section-label">Upload Excel Workbook (.xlsx)</div>',
+            unsafe_allow_html=True,
+        )
         uploaded = st.file_uploader(
             "Workbook",
             type=["xlsx"],
             label_visibility="collapsed",
         )
-        if uploaded:
+        if uploaded is not None:
+            st.session_state["uploaded_bytes"] = uploaded.getvalue()
+            st.session_state["uploaded_name"] = uploaded.name
+            st.session_state["uploaded_size"] = uploaded.size
+
+        file_bytes = st.session_state.get("uploaded_bytes")
+        file_name  = st.session_state.get("uploaded_name", "")
+        file_size  = st.session_state.get("uploaded_size", 0)
+        has_file   = file_bytes is not None
+
+        if has_file:
             st.markdown(
-                f'<div style="margin-top:10px;padding:12px 16px;background:rgba(77,187,128,0.07);'
-                f'border:1px solid rgba(77,187,128,0.2);border-radius:10px;">'
-                f'<span style="color:var(--green);font-size:11px;font-weight:700;font-family:var(--font);">'
-                f'&#10003;&nbsp; Ready</span>'
-                f'<span style="color:var(--tx1);font-size:12px;font-weight:600;font-family:var(--font);margin-left:10px;">'
-                f'{uploaded.name}</span>'
-                f'<span style="color:var(--tx3);font-size:11px;font-family:var(--font);margin-left:8px;">'
-                f'{uploaded.size/1024:.1f} KB</span>'
+                f'<div class="file-ready">'
+                f'<span class="file-ready-tick">&#10003;&nbsp; Ready</span>'
+                f'<span class="file-ready-name">{file_name}</span>'
+                f'<span class="file-ready-size">{file_size/1024:.1f} KB</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
-        else:
-            st.markdown(
-                '<div style="margin-top:10px;font-size:11.5px;color:var(--tx3);'
-                'font-family:var(--font);">Accepts .xlsx &middot; '
-                'the same workbook your scripts expect</div>',
-                unsafe_allow_html=True,
-            )
-
-    with col_sel:
-        st.markdown(_section_label("2", "Select Report"), unsafe_allow_html=True)
-
-        groups: dict[str, list[ScriptEntry]] = {}
-        for e in REGISTRY:
-            groups.setdefault(e.group, []).append(e)
-        group_names = list(groups.keys())
-
-        _short = {
-            group_names[0]: "Diagram 1",
-            group_names[1]: "Diagram 2",
-            group_names[2]: "Diagram 3",
-            group_names[3]: "Slide 12 · 1st",
-            group_names[4]: "Slide 12 · 2nd",
-            group_names[5]: "Slide 12 · 3rd",
-            group_names[6]: "Diagram 4",
-        }
-
-        if "active_group" not in st.session_state:
-            st.session_state["active_group"] = group_names[0]
-
-        tab_cols = st.columns(len(group_names))
-        for col, gname in zip(tab_cols, group_names):
-            with col:
-                is_active = st.session_state["active_group"] == gname
-                if st.button(
-                    _short.get(gname, gname),
-                    key=f"grp_{gname}",
-                    type="primary" if is_active else "secondary",
-                    use_container_width=True,
-                ):
-                    st.session_state["active_group"] = gname
-                    st.rerun()
-
-        st.markdown('<div style="margin-top:14px;"></div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
         active_group = st.session_state["active_group"]
         g_entries = groups[active_group]
         labels = [e.label for e in g_entries]
 
+        st.markdown(_section_label("3", "Variant"), unsafe_allow_html=True)
         selected_label = st.radio(
             "Variant", labels,
             key=f"variant_{active_group}",
@@ -1209,93 +1728,69 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-    # ── Divider ───────────────────────────────────────────────────────────
-    st.markdown(
-        '<hr style="border-color:var(--gold-xlo);margin:28px 0;">',
-        unsafe_allow_html=True,
-    )
-
-    # ── Options & Run ─────────────────────────────────────────────────────
-    col_opt, col_run = st.columns([6, 3], gap="large")
-
-    with col_opt:
-        st.markdown(_section_label("3", "Options"), unsafe_allow_html=True)
+        st.markdown('<hr style="border-color:var(--gold-xlo);margin:10px 0;">', unsafe_allow_html=True)
         fmt_raw = st.radio(
             "Copy format",
             ["TSV (Excel / Sheets)", "Markdown"],
             horizontal=True,
         )
         fmt = "Markdown" if "Markdown" in fmt_raw else "TSV"
-        st.markdown(
-            '<div style="margin-top:8px;font-size:11px;color:var(--tx3);font-family:var(--font);">'
-            'TSV — paste directly into Excel or Google Sheets with columns split automatically.'
-            '</div>',
-            unsafe_allow_html=True,
-        )
 
-    with col_run:
-        st.markdown(_section_label("4", "Execute"), unsafe_allow_html=True)
-        st.markdown('<div class="run-wrap">', unsafe_allow_html=True)
+        st.markdown('<div class="run-wrap" style="margin-top:10px;">', unsafe_allow_html=True)
         run = st.button(
             "▶  Run Report",
             type="primary",
-            disabled=uploaded is None,
+            disabled=not has_file,
             use_container_width=True,
         )
         st.markdown('</div>', unsafe_allow_html=True)
-        if uploaded is None:
+        if not has_file:
             st.markdown(
                 '<div style="font-size:10.5px;color:var(--tx3);text-align:center;'
-                'margin-top:8px;font-family:var(--font);">Upload a workbook first</div>',
+                'margin-top:6px;font-family:var(--font);">Upload a workbook first</div>',
                 unsafe_allow_html=True,
             )
 
-    # ── How it works ──────────────────────────────────────────────────────
-    st.markdown('<div style="margin-top:20px;"></div>', unsafe_allow_html=True)
-    with st.expander("How it works"):
-        st.markdown(
-            "1. **Upload** your `.xlsx` workbook.\n"
-            "2. **Select** a report group, then pick a variant.\n"
-            "3. **Run** — the script executes in an isolated temp folder. "
-            "You get the log, chart preview, output tables with copy, "
-            "and the exact `.xlsx` the script generates.\n\n"
-            "> Each report requires a specific sheet — shown in the script info card."
-        )
+    # ── OUTPUT column ────────────────────────────────────────────────────────
+    with col_output:
+        if run and has_file:
+            with st.spinner(f"Running  ·  {entry.label}"):
+                try:
+                    result = run_script(entry, file_bytes)
+                except subprocess.TimeoutExpired:
+                    st.error("Script exceeded 3-minute timeout.")
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    return
+                except Exception as exc:
+                    st.error(f"Could not launch script: {exc}")
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    return
+            st.session_state["last_result"]   = result
+            st.session_state["last_entry_id"] = entry.id
+            st.session_state["last_fmt"]      = fmt
+            st.rerun()
 
-    # ── Execute ───────────────────────────────────────────────────────────
-    if run and uploaded is not None:
-        with st.spinner(f"Running  ·  {entry.label}"):
-            try:
-                result = run_script(entry, uploaded.getvalue())
-            except subprocess.TimeoutExpired:
-                st.error("Script exceeded 3-minute timeout.")
-                return
-            except Exception as exc:
-                st.error(f"Could not launch script: {exc}")
-                return
-        st.session_state["last_result"]   = result
-        st.session_state["last_entry_id"] = entry.id
-        st.session_state["last_fmt"]      = fmt
-        st.rerun()
+        if "last_result" in st.session_state:
+            st.markdown(_section_label("↓", "Results"), unsafe_allow_html=True)
+            _entry = REGISTRY_BY_ID[st.session_state["last_entry_id"]]
+            render_results(
+                _entry,
+                st.session_state["last_result"],
+                st.session_state["last_fmt"],
+            )
+        else:
+            st.markdown("""
+<div class="empty-state anim-fade-up">
+  <div class="empty-state-icon">&#9678;</div>
+  <div class="empty-state-title">Output will appear here</div>
+  <div class="empty-state-desc">
+    Select a report type, upload your Excel workbook,
+    and click <strong style="color:var(--gold);">Run Report</strong> to generate results.
+  </div>
+</div>""", unsafe_allow_html=True)
 
-    # ── Render persisted results ───────────────────────────────────────────
-    if "last_result" in st.session_state:
-        st.markdown(
-            '<hr style="border-color:var(--gold-xlo);margin:32px 0 28px;">',
-            unsafe_allow_html=True,
-        )
-        st.markdown(_section_label("↓", "Results"), unsafe_allow_html=True)
-        _entry = REGISTRY_BY_ID[st.session_state["last_entry_id"]]
-        render_results(
-            _entry,
-            st.session_state["last_result"],
-            st.session_state["last_fmt"],
-        )
-
-    st.markdown('</div>', unsafe_allow_html=True)  # /prp-wrap
-
-    # Bottom spacer
-    st.markdown('<div style="height:60px;"></div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)  # /main-layout
+    st.markdown('<div style="height:40px;"></div>', unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
