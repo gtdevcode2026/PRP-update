@@ -1,8 +1,8 @@
 """
-Excel Automation Studio — AB InBev
-===================================
-Professional Streamlit dashboard for the 12 automation scripts in this folder.
-Black-and-gold design system with custom CSS injection.
+PRP Automation Studio — AB InBev
+=================================
+Professional Streamlit dashboard for the PRP automation scripts.
+Premium black-and-gold design system.
 """
 
 from __future__ import annotations
@@ -24,11 +24,8 @@ import streamlit as st
 
 APP_DIR = Path(__file__).resolve().parent
 
-# The filename every relative-path script expects to read.
 INPUT_NAME = "PRP Sample Jun (2).xlsx"
 
-# The one script that hardcodes an absolute path; we rewrite this prefix to the
-# temp dir so it reads/writes locally and never touches the real location.
 ABS_PREFIX = (
     r"C:\Users\C915662\OneDrive - Anheuser-Busch InBev"
     r"\AB-InBev Automations\Assessment_Automation"
@@ -50,24 +47,23 @@ class ScriptEntry:
         return APP_DIR / self.rel_path
 
 
-# All 11 scripts, grouped by folder, with friendly labels.
 REGISTRY: list[ScriptEntry] = [
     ScriptEntry(
-        "d1", "Daigram 1 — Suppliers",
+        "d1", "Diagram 1 — Suppliers",
         "Zone-wise Tier-1 Suppliers (2026 Technology filter) + chart",
         "daigram 1 automation/automation.py",
         "TPRM Web-Portal Export",
         "Filters 2026 + TECHNOLOGY, merges static Tier-1 data, embeds a matplotlib chart.",
     ),
     ScriptEntry(
-        "d2", "Daigram 2 — Assessments",
+        "d2", "Diagram 2 — Assessments",
         "Cyber assessments 2026: Open vs Closed by zone + KPI charts",
         "daigram 2 automation/automation.py",
         "OneTrust Assessment",
         "Tags=Cyber & year 2026, Open/Closed pivot, Q2 KPI, two native Excel charts.",
     ),
     ScriptEntry(
-        "d3", "Daigram 3 — Assessments",
+        "d3", "Diagram 3 — Assessments",
         "Beyond-1-year-overdue assessments: Completed vs Open pivot + chart",
         "daigram 3 automation/automation.py",
         "OneTrust Assessment",
@@ -124,8 +120,8 @@ class RunResult:
     returncode: int
     stdout: str
     stderr: str
-    outputs: list[tuple[str, bytes]] = field(default_factory=list)   # (filename, bytes)
-    tables: dict[str, dict[str, pd.DataFrame]] = field(default_factory=dict)  # file -> {sheet: df}
+    outputs: list[tuple[str, bytes]] = field(default_factory=list)
+    tables: dict[str, dict[str, pd.DataFrame]] = field(default_factory=dict)
 
 
 def _snapshot(folder: Path) -> dict[str, float]:
@@ -140,21 +136,16 @@ def run_script(entry: ScriptEntry, uploaded_bytes: bytes) -> RunResult:
     """Run one automation script in an isolated temp dir and collect its outputs."""
     tmpdir = Path(tempfile.mkdtemp(prefix="excel_auto_"))
     try:
-        # 1. Place the uploaded workbook under the name the scripts expect.
         (tmpdir / INPUT_NAME).write_bytes(uploaded_bytes)
 
-        # 2. Copy (and possibly patch) the script into the temp dir.
         source = entry.path.read_text(encoding="utf-8")
         if entry.patch_abs:
             source = source.replace(ABS_PREFIX, str(tmpdir))
         script_copy = tmpdir / "script_to_run.py"
         script_copy.write_text(source, encoding="utf-8")
 
-        # 3. Snapshot existing files so we can detect what the script creates.
         before = _snapshot(tmpdir)
 
-        # 4. Run it. Force UTF-8 (scripts print emoji that crash cp1252 on Windows)
-        #    and a headless matplotlib backend.
         env = dict(os.environ)
         env["PYTHONIOENCODING"] = "utf-8"
         env["MPLBACKEND"] = "Agg"
@@ -169,7 +160,6 @@ def run_script(entry: ScriptEntry, uploaded_bytes: bytes) -> RunResult:
             timeout=180,
         )
 
-        # 5. Diff to find new/modified output files (ignore the input + the copy).
         after = _snapshot(tmpdir)
         ignore = {INPUT_NAME, script_copy.name}
         produced = [
@@ -192,7 +182,7 @@ def run_script(entry: ScriptEntry, uploaded_bytes: bytes) -> RunResult:
                     result.tables[name] = pd.read_excel(
                         tmpdir / name, sheet_name=None, engine="openpyxl"
                     )
-                except Exception as exc:  # preview is best-effort
+                except Exception as exc:
                     result.tables[name] = {
                         "(could not read)": pd.DataFrame({"error": [str(exc)]})
                     }
@@ -224,9 +214,6 @@ def _trim_sparse_rows(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _trim_sparse_cols(df: pd.DataFrame) -> pd.DataFrame:
-    """Drop columns that are mostly empty — removes side-by-side tables that pandas
-    reads as extra columns when a sheet has multiple logical tables placed next to
-    each other (e.g. a pivot at col 0 and a summary table starting at col 8)."""
     if df.empty:
         return df
     threshold = max(2, len(df) // 2)
@@ -244,7 +231,6 @@ def _trim_sparse_cols(df: pd.DataFrame) -> pd.DataFrame:
 def _clean_for_tsv(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    # 1. Flatten MultiIndex column headers
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [
             " ".join(str(c) for c in col if str(c) not in ("", "nan")).strip()
@@ -253,16 +239,13 @@ def _clean_for_tsv(df: pd.DataFrame) -> pd.DataFrame:
     else:
         df.columns = [str(c) for c in df.columns]
 
-    # 2. Clear pandas "Unnamed: N" artefacts from merged header cells
     df.columns = [
         "" if c.startswith("Unnamed:") else c
         for c in df.columns
     ]
 
-    # 3. Clean every column
     for col in df.columns:
         if pd.api.types.is_numeric_dtype(df[col]):
-            # Whole-number floats (e.g. 536.0) → "536"; NaN → ""
             def _fmt(v):
                 if pd.isna(v):
                     return ""
@@ -297,8 +280,6 @@ def _chartable(df: pd.DataFrame):
     if chart_df.empty:
         return None
     chart_df = chart_df.set_index(label)
-    # Sanitize column names — altair v6 parse_shorthand crashes on empty strings
-    # or names containing ':' which it interprets as type qualifiers.
     chart_df.columns = [
         (str(c).replace(":", "_").replace(".", "_") or f"col_{i}")
         for i, c in enumerate(chart_df.columns)
@@ -312,207 +293,530 @@ def _chartable(df: pd.DataFrame):
 
 
 # ---------------------------------------------------------------------------
-# Design system — Training Status(4) exact design
+# Design system
 # ---------------------------------------------------------------------------
 
 _CSS = """<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800&display=swap');
+
 :root {
-  --bg:       #000000;
-  --bg2:      #0d0d0d;
-  --bg3:      #1a1a1a;
-  --bg4:      #242424;
-  --border:   #3a3000;
-  --border2:  #5a4a00;
-  --text:     #d4a800;
-  --text2:    #b08800;
-  --text3:    #7a6200;
-  --accent:   #d4a800;
-  --accent2:  #f0c000;
-  --green:    #4ab840;
-  --red:      #d44040;
-  --orange:   #d47800;
-  --card-glow: 0 0 40px rgba(212,168,0,0.10);
+  --bg:       #070707;
+  --s1:       #0d0d0d;
+  --s2:       #131313;
+  --s3:       #191919;
+  --s4:       #212121;
+  --gold:     #C8A84B;
+  --gold-hi:  #E0BC5A;
+  --gold-lo:  #7A6535;
+  --gold-xlo: #221B0B;
+  --gold-xxlo:#160F05;
+  --glow:     rgba(200,168,75,0.08);
+  --glow2:    rgba(200,168,75,0.18);
+  --tx1:      #EDE0B8;
+  --tx2:      #A89060;
+  --tx3:      #5E5030;
+  --green:    #4DBB80;
+  --red:      #D45050;
+  --font:     'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
 }
+
 * { box-sizing: border-box; }
-body, .stApp { font-family: Arial, sans-serif !important; background: var(--bg) !important; color: var(--text) !important; }
-.stApp > header, [data-testid="stHeader"] { background: var(--bg) !important; display: none !important; }
-#MainMenu, footer, [data-testid="stDecoration"], [data-testid="stToolbar"] { display: none !important; }
-.main .block-container { padding-top: 0 !important; max-width: 1600px !important; padding-left: 0 !important; padding-right: 0 !important; }
 
-/* ── Headings ── */
-h1,h2,h3,h4 { color: var(--text) !important; font-family: Arial, sans-serif !important; }
-
-/* ── KPI cards ── */
-.kpi-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:14px; margin-bottom:24px; }
-@media(max-width:1200px){.kpi-grid{grid-template-columns:repeat(3,1fr);}}
-@media(max-width:700px){.kpi-grid{grid-template-columns:repeat(2,1fr);}}
-.kpi-card {
-  background:var(--bg2); border:1px solid var(--border); border-radius:14px;
-  padding:18px 20px; position:relative; overflow:hidden;
-  transition:border-color .2s,box-shadow .2s; box-shadow:var(--card-glow);
-}
-.kpi-card:hover { border-color:var(--border2); box-shadow:0 0 30px rgba(212,168,0,0.18); }
-.kpi-card::before {
-  content:''; position:absolute; top:0; left:0; right:0; height:2px;
-  background:linear-gradient(90deg,var(--accent),var(--accent2)); opacity:0; transition:opacity .2s;
-}
-.kpi-card:hover::before { opacity:1; }
-.kpi-label { font-size:11px; color:#fff; text-transform:uppercase; letter-spacing:0.8px; font-weight:500; margin-bottom:8px; }
-.kpi-val { font-family:Arial,sans-serif; font-size:28px; font-weight:800; line-height:1; letter-spacing:-1px; color:var(--accent); }
-.kpi-sub { font-size:11px; color:#fff; margin-top:4px; }
-
-/* ── Tabs (Streamlit native override) ── */
-[data-testid="stTabs"] [data-baseweb="tab-list"] {
-  background: transparent !important; gap: 6px !important;
-  border-bottom: 1px solid var(--border) !important; padding-bottom: 0 !important;
-}
-[data-testid="stTabs"] [data-baseweb="tab"] {
-  background: var(--bg2) !important; border: 1px solid var(--border) !important;
-  border-radius: 8px 8px 0 0 !important; color: var(--text2) !important;
-  font-size: 12px !important; font-weight: 500 !important; font-family: Arial,sans-serif !important;
-  padding: 7px 16px !important; white-space: nowrap !important;
-  transition: all .15s !important;
-}
-[data-testid="stTabs"] [data-baseweb="tab"]:hover {
-  border-color: var(--accent) !important; color: var(--accent) !important;
-}
-[data-testid="stTabs"] [aria-selected="true"] {
-  background: var(--accent) !important; border-color: var(--accent) !important;
-  color: #000 !important; font-weight: 600 !important;
-}
-[data-testid="stTabs"] [data-baseweb="tab-highlight"] { display: none !important; }
-[data-testid="stTabs"] [data-baseweb="tab-border"] { display: none !important; }
-
-/* ── Section card ── */
-.section-card {
-  background: var(--bg2); border: 1px solid var(--border);
-  border-radius: 16px; overflow: hidden; box-shadow: var(--card-glow);
-  margin-bottom: 20px;
-}
-.section-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 22px; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 10px;
-}
-.section-title-block { display: flex; align-items: center; gap: 10px; }
-.section-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
-.section-title { font-family: Arial,sans-serif; font-weight: 700; font-size: 14px; color: var(--text); }
-.section-desc { font-size: 11px; color: var(--text3); margin-top: 2px; }
-.section-body { padding: 18px 22px; }
-
-/* ── Metrics row ── */
-.metrics-row {
-  display: grid; grid-template-columns: repeat(4,1fr);
-  gap: 1px; background: var(--border); border-bottom: 1px solid var(--border);
-}
-.metric-box { background: var(--bg2); padding: 13px 20px; display: flex; flex-direction: column; gap: 4px; }
-.metric-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.7px; color: #fff; font-weight: 500; }
-.metric-val { font-family: Arial,sans-serif; font-size: 20px; font-weight: 700; line-height: 1; color: var(--accent); }
-
-/* ── Upload zone ── */
-[data-testid="stFileUploader"] {
-  background: var(--bg3) !important;
-  border: 2px dashed var(--border2) !important;
-  border-radius: 12px !important;
-  transition: all .2s !important;
-}
-[data-testid="stFileUploader"]:hover {
-  border-color: var(--accent) !important;
-  background: rgba(212,168,0,0.06) !important;
-}
-[data-testid="stFileUploaderDropzoneInstructions"] div,
-[data-testid="stFileUploaderDropzoneInstructions"] span { color: var(--text3) !important; font-size: 12px !important; }
-[data-testid="stFileUploader"] label { color: var(--text3) !important; font-size: 11px !important; }
-[data-testid="stFileUploader"] small { color: var(--text3) !important; }
-
-/* ── Primary button (Run) ── */
-.stButton > button[kind="primary"] {
-  background: var(--accent) !important; color: #000 !important;
-  border: none !important; border-radius: 8px !important;
-  font-family: Arial,sans-serif !important; font-weight: 600 !important;
-  font-size: 12px !important; padding: 8px 20px !important;
-  transition: background .15s, transform .15s !important;
-  letter-spacing: 0.3px !important;
-}
-.stButton > button[kind="primary"]:hover {
-  background: var(--accent2) !important; transform: translateY(-1px) !important;
-}
-.stButton > button[kind="primary"]:disabled {
-  background: var(--bg3) !important; color: var(--text3) !important;
-  transform: none !important; opacity: 0.5 !important;
+body, .stApp {
+  font-family: var(--font) !important;
+  background: var(--bg) !important;
+  color: var(--tx1) !important;
 }
 
-/* ── Ghost / secondary button ── */
-.stButton > button:not([kind="primary"]) {
-  background: var(--bg3) !important; color: var(--text2) !important;
-  border: 1px solid var(--border) !important; border-radius: 8px !important;
-  font-family: Arial,sans-serif !important; font-weight: 600 !important;
-  font-size: 12px !important; transition: all .15s !important;
-}
-.stButton > button:not([kind="primary"]):hover {
-  border-color: var(--accent) !important; color: var(--accent) !important;
-}
-
-/* ── Download button ── */
-[data-testid="stDownloadButton"] > button {
-  background: var(--bg3) !important; color: var(--text2) !important;
-  border: 1px solid var(--border) !important; border-radius: 8px !important;
-  font-family: Arial,sans-serif !important; font-weight: 600 !important; font-size: 12px !important;
-  transition: all .15s !important;
-}
-[data-testid="stDownloadButton"] > button:hover {
-  border-color: var(--accent) !important; color: var(--accent) !important;
+/* Ambient background glow */
+.stApp::after {
+  content: '';
+  position: fixed;
+  top: -300px; right: -200px;
+  width: 700px; height: 700px;
+  background: radial-gradient(ellipse, rgba(200,168,75,0.04) 0%, transparent 65%);
+  pointer-events: none;
+  z-index: 0;
 }
 
-/* ── Radio ── */
-[data-testid="stRadio"] label { color: var(--text3) !important; font-size: 11px !important; text-transform: uppercase !important; letter-spacing: 0.7px !important; font-family: Arial,sans-serif !important; }
-[data-testid="stRadio"] [data-testid="stMarkdownContainer"] p { color: var(--text2) !important; font-size: 12px !important; font-family: Arial,sans-serif !important; }
+/* Hide Streamlit chrome */
+.stApp > header, [data-testid="stHeader"],
+#MainMenu, footer,
+[data-testid="stDecoration"],
+[data-testid="stToolbar"] { display: none !important; }
 
-/* ── Expander ── */
-[data-testid="stExpander"] { background: var(--bg2) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; }
-[data-testid="stExpander"] summary { color: var(--text3) !important; font-size: 12px !important; font-family: Arial,sans-serif !important; }
-[data-testid="stExpander"] summary:hover { color: var(--accent) !important; }
-
-/* ── Alerts ── */
-[data-testid="stAlert"] { background: var(--bg2) !important; border-radius: 8px !important; border: 1px solid var(--border) !important; }
-[data-testid="stAlert"] p { color: var(--text2) !important; font-family: Arial,sans-serif !important; }
-
-/* ── Dataframe ── */
-[data-testid="stDataFrame"] { border: 1px solid var(--border) !important; border-radius: 8px !important; overflow: hidden !important; }
-
-/* ── Code ── */
-[data-testid="stCode"], .stCodeBlock pre { background: var(--bg3) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; color: var(--text2) !important; }
-
-/* ── Image ── */
-[data-testid="stImage"] img { border-radius: 8px !important; border: 1px solid var(--border) !important; }
-
-/* ── Spinner ── */
-[data-testid="stSpinner"] > div { border-top-color: var(--accent) !important; }
-
-/* ── Text ── */
-.stMarkdown p, .stMarkdown li { color: var(--text2) !important; font-family: Arial,sans-serif !important; font-size: 13px !important; }
-.stCaption p { color: var(--text3) !important; font-size: 11px !important; }
-
-/* ── Divider ── */
-hr { border-color: var(--border) !important; margin: 1rem 0 !important; }
-
-/* ── Badge pills ── */
-.badge { display:inline-flex; align-items:center; border-radius:5px; padding:2px 8px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
-.badge-green { background:rgba(74,184,64,.15); color:var(--green); }
-.badge-red   { background:rgba(212,64,64,.15);  color:var(--red); }
-.badge-yellow{ background:rgba(212,168,0,.15);  color:var(--accent); }
-.badge-gray  { background:rgba(122,98,0,.25);   color:var(--text3); }
-
-/* ── Vega chart ── */
-[data-testid="stArrowVegaLiteChart"] {
-  background: var(--bg2) !important; border: 1px solid var(--border) !important;
-  border-radius: 8px !important; padding: 12px !important;
+.main .block-container {
+  padding-top: 0 !important;
+  max-width: 1440px !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
 }
+
+/* ── Typography ── */
+h1,h2,h3,h4 {
+  font-family: var(--font) !important;
+  color: var(--tx1) !important;
+  letter-spacing: -0.03em !important;
+}
+.stMarkdown p, .stMarkdown li {
+  font-family: var(--font) !important;
+  color: var(--tx2) !important;
+  font-size: 13px !important;
+}
+.stCaption p { color: var(--tx3) !important; font-size: 11px !important; font-family: var(--font) !important; }
 
 /* ── Scrollbar ── */
-::-webkit-scrollbar { width:6px; height:6px; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border2); border-radius:3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+::-webkit-scrollbar-thumb { background: var(--gold-xlo); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--gold-lo); }
+
+/* ═══════════════════════════════════════════════════════
+   HEADER
+═══════════════════════════════════════════════════════ */
+.prp-header {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(7,7,7,0.95);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border-bottom: 1px solid var(--gold-xlo);
+  padding: 0 44px;
+  display: flex; align-items: center; justify-content: space-between;
+  height: 64px;
+  margin-bottom: 0;
+}
+.prp-logo { display: flex; align-items: center; gap: 14px; }
+.prp-logo-mark {
+  width: 38px; height: 38px;
+  background: linear-gradient(135deg, #C8A84B 0%, #E8C84E 50%, #9A7A30 100%);
+  border-radius: 11px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 19px; line-height: 1;
+  box-shadow: 0 0 28px rgba(200,168,75,0.35), inset 0 1px 1px rgba(255,255,255,0.2);
+  flex-shrink: 0;
+}
+.prp-brand-name {
+  font-size: 16px; font-weight: 800;
+  color: var(--tx1); letter-spacing: -0.025em; line-height: 1.1;
+}
+.prp-brand-sub {
+  font-size: 10.5px; color: var(--tx3);
+  letter-spacing: 0.06em; text-transform: uppercase;
+  margin-top: 2px; font-weight: 500;
+}
+.prp-header-right { display: flex; align-items: center; gap: 8px; }
+.prp-badge {
+  font-size: 10px; font-weight: 700;
+  color: var(--gold);
+  background: rgba(200,168,75,0.08);
+  border: 1px solid rgba(200,168,75,0.16);
+  border-radius: 100px;
+  padding: 5px 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-family: var(--font);
+}
+.prp-badge-live {
+  color: var(--green);
+  background: rgba(77,187,128,0.08);
+  border-color: rgba(77,187,128,0.16);
+}
+.prp-badge-live::before {
+  content: '';
+  display: inline-block;
+  width: 5px; height: 5px;
+  background: var(--green);
+  border-radius: 50%;
+  margin-right: 6px;
+  box-shadow: 0 0 6px var(--green);
+  vertical-align: middle;
+  margin-top: -1px;
+}
+
+/* ═══════════════════════════════════════════════════════
+   LAYOUT WRAPPER
+═══════════════════════════════════════════════════════ */
+.prp-wrap { padding: 0 44px; }
+
+/* ═══════════════════════════════════════════════════════
+   KPI STRIP
+═══════════════════════════════════════════════════════ */
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  background: var(--gold-xxlo);
+  border: 1px solid var(--gold-xlo);
+  border-radius: 16px;
+  overflow: hidden;
+  margin: 28px 0 32px;
+  gap: 1px;
+}
+@media(max-width:1100px){ .kpi-strip { grid-template-columns: repeat(3,1fr); } }
+@media(max-width:700px)  { .kpi-strip { grid-template-columns: repeat(2,1fr); } }
+
+.kpi-cell {
+  background: var(--s1);
+  padding: 22px 26px;
+  transition: background 0.2s;
+  position: relative;
+}
+.kpi-cell:hover { background: var(--s2); }
+.kpi-cell:first-child::after {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, var(--gold), var(--gold-hi), transparent);
+  opacity: 0.7;
+}
+.kpi-eyebrow {
+  font-size: 9.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--tx3); margin-bottom: 10px;
+  font-family: var(--font);
+}
+.kpi-value {
+  font-size: 32px; font-weight: 800;
+  line-height: 1; letter-spacing: -0.04em;
+  color: var(--gold);
+  font-family: var(--font);
+}
+.kpi-value-sm { font-size: 14px; letter-spacing: -0.01em; font-weight: 600; }
+.kpi-detail { font-size: 10.5px; color: var(--tx3); margin-top: 7px; font-family: var(--font); }
+
+/* ═══════════════════════════════════════════════════════
+   SECTION LABEL
+═══════════════════════════════════════════════════════ */
+.prp-label {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 9.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--tx3); margin: 28px 0 14px;
+  font-family: var(--font);
+}
+.prp-label .prp-label-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  background: var(--gold-xlo); border: 1px solid var(--gold-lo);
+  border-radius: 5px; font-size: 9px; font-weight: 800;
+  color: var(--gold-lo);
+}
+.prp-label::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, var(--gold-xlo), transparent);
+}
+
+/* ═══════════════════════════════════════════════════════
+   CARDS
+═══════════════════════════════════════════════════════ */
+.prp-card {
+  background: var(--s1);
+  border: 1px solid var(--gold-xlo);
+  border-radius: 16px;
+  overflow: hidden;
+  transition: border-color 0.25s cubic-bezier(0.32,0.72,0,1),
+              box-shadow   0.25s cubic-bezier(0.32,0.72,0,1);
+}
+.prp-card:hover {
+  border-color: rgba(200,168,75,0.2);
+  box-shadow: 0 0 48px rgba(200,168,75,0.06);
+}
+.prp-card-accent-bar {
+  height: 2px;
+  background: linear-gradient(90deg, var(--gold) 0%, var(--gold-hi) 35%, transparent 100%);
+  opacity: 0.65;
+}
+.prp-card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--gold-xlo);
+  flex-wrap: wrap; gap: 10px;
+}
+.prp-card-title-group { display: flex; align-items: center; gap: 10px; }
+.prp-card-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%; background: var(--gold);
+  box-shadow: 0 0 10px rgba(200,168,75,0.5);
+  flex-shrink: 0;
+}
+.prp-card-title {
+  font-size: 13px; font-weight: 700;
+  color: var(--tx1); letter-spacing: -0.015em;
+  font-family: var(--font);
+}
+.prp-card-sub { font-size: 11px; color: var(--tx3); margin-top: 2px; font-family: var(--font); }
+.prp-card-body { padding: 22px 24px; }
+
+/* ── Result metrics band ── */
+.result-band {
+  display: grid; grid-template-columns: repeat(4,1fr);
+  background: var(--gold-xxlo);
+  border-top: 1px solid var(--gold-xlo);
+  gap: 1px;
+}
+.result-cell { background: var(--s1); padding: 16px 22px; }
+.result-cell-label {
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--tx3); font-weight: 700; font-family: var(--font);
+}
+.result-cell-value {
+  font-size: 24px; font-weight: 800;
+  letter-spacing: -0.04em; color: var(--gold);
+  margin-top: 5px; line-height: 1;
+  font-family: var(--font);
+}
+
+/* ═══════════════════════════════════════════════════════
+   INFO CARD  (script details)
+═══════════════════════════════════════════════════════ */
+.info-card {
+  background: var(--s2);
+  border: 1px solid var(--gold-xlo);
+  border-radius: 14px;
+  overflow: hidden;
+  margin-top: 16px;
+}
+.info-card-head {
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--gold-xlo);
+  display: flex; align-items: flex-start; gap: 12px;
+}
+.info-card-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%; background: var(--gold);
+  box-shadow: 0 0 8px rgba(200,168,75,0.45);
+  flex-shrink: 0; margin-top: 3px;
+}
+.info-card-title { font-size: 12px; font-weight: 700; color: var(--tx1); font-family: var(--font); }
+.info-card-desc  { font-size: 11px; color: var(--tx3); margin-top: 3px; line-height: 1.55; font-family: var(--font); }
+.info-card-meta  { display: grid; grid-template-columns: 1fr 1fr; background: var(--gold-xxlo); gap: 1px; }
+.info-meta-cell  { background: var(--s2); padding: 13px 20px; }
+.info-meta-lbl   { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--tx3); font-weight: 700; font-family: var(--font); }
+.info-meta-val   { font-size: 12px; color: var(--gold); font-weight: 600; margin-top: 5px; font-family: var(--font); }
+
+/* ═══════════════════════════════════════════════════════
+   CHART AREA LABEL
+═══════════════════════════════════════════════════════ */
+.chart-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--tx3);
+  margin-bottom: 8px; font-family: var(--font);
+}
+
+/* ═══════════════════════════════════════════════════════
+   BADGES
+═══════════════════════════════════════════════════════ */
+.badge {
+  display: inline-flex; align-items: center;
+  border-radius: 6px; padding: 3px 10px;
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  font-family: var(--font);
+}
+.badge-green { background: rgba(77,187,128,0.12); color: var(--green); }
+.badge-red   { background: rgba(212,80,80,0.12);  color: var(--red); }
+.badge-gold  { background: rgba(200,168,75,0.12); color: var(--gold); }
+.badge-gray  { background: rgba(94,80,48,0.18);   color: var(--tx3); }
+
+/* ═══════════════════════════════════════════════════════
+   GROUP SELECTOR BUTTONS
+═══════════════════════════════════════════════════════ */
+.stButton > button {
+  font-family: var(--font) !important;
+  border-radius: 9px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em !important;
+  transition: all 0.2s cubic-bezier(0.32,0.72,0,1) !important;
+}
+.stButton > button[kind="primary"] {
+  background: var(--gold) !important;
+  color: #000 !important;
+  border: none !important;
+  box-shadow: 0 0 24px rgba(200,168,75,0.28), inset 0 1px 1px rgba(255,255,255,0.12) !important;
+}
+.stButton > button[kind="primary"]:hover {
+  background: var(--gold-hi) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 0 36px rgba(200,168,75,0.38) !important;
+}
+.stButton > button[kind="primary"]:active { transform: scale(0.98) !important; }
+.stButton > button:not([kind="primary"]) {
+  background: var(--s2) !important;
+  color: var(--tx3) !important;
+  border: 1px solid var(--gold-xlo) !important;
+}
+.stButton > button:not([kind="primary"]):hover {
+  border-color: rgba(200,168,75,0.28) !important;
+  color: var(--tx2) !important;
+  background: rgba(200,168,75,0.04) !important;
+}
+
+/* ── Big run CTA ── */
+.run-wrap .stButton > button[kind="primary"] {
+  height: 54px !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  border-radius: 13px !important;
+  letter-spacing: 0.04em !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   UPLOAD ZONE
+═══════════════════════════════════════════════════════ */
+[data-testid="stFileUploader"] {
+  background: var(--s2) !important;
+  border: 1.5px dashed var(--gold-lo) !important;
+  border-radius: 14px !important;
+  transition: all 0.2s !important;
+}
+[data-testid="stFileUploader"]:hover {
+  border-color: var(--gold) !important;
+  background: rgba(200,168,75,0.03) !important;
+}
+[data-testid="stFileUploaderDropzoneInstructions"] div,
+[data-testid="stFileUploaderDropzoneInstructions"] span {
+  color: var(--tx3) !important;
+  font-size: 12px !important;
+  font-family: var(--font) !important;
+}
+[data-testid="stFileUploader"] label,
+[data-testid="stFileUploader"] small {
+  color: var(--tx3) !important;
+  font-family: var(--font) !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   RADIO
+═══════════════════════════════════════════════════════ */
+[data-testid="stRadio"] label {
+  color: var(--tx3) !important;
+  font-size: 10px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.1em !important;
+  font-family: var(--font) !important;
+  font-weight: 700 !important;
+}
+[data-testid="stRadio"] [data-testid="stMarkdownContainer"] p {
+  color: var(--tx2) !important;
+  font-size: 12px !important;
+  font-family: var(--font) !important;
+  font-weight: 500 !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   EXPANDER
+═══════════════════════════════════════════════════════ */
+[data-testid="stExpander"] {
+  background: var(--s1) !important;
+  border: 1px solid var(--gold-xlo) !important;
+  border-radius: 12px !important;
+}
+[data-testid="stExpander"] summary {
+  color: var(--tx3) !important;
+  font-size: 12px !important;
+  font-family: var(--font) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em !important;
+}
+[data-testid="stExpander"] summary:hover { color: var(--gold) !important; }
+
+/* ═══════════════════════════════════════════════════════
+   ALERTS
+═══════════════════════════════════════════════════════ */
+[data-testid="stAlert"] {
+  background: var(--s2) !important;
+  border-radius: 12px !important;
+  border: 1px solid var(--gold-xlo) !important;
+}
+[data-testid="stAlert"] p {
+  color: var(--tx2) !important;
+  font-family: var(--font) !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   DOWNLOAD BUTTON
+═══════════════════════════════════════════════════════ */
+[data-testid="stDownloadButton"] > button {
+  background: var(--s2) !important;
+  color: var(--tx2) !important;
+  border: 1px solid var(--gold-xlo) !important;
+  border-radius: 10px !important;
+  font-family: var(--font) !important;
+  font-weight: 600 !important;
+  font-size: 11.5px !important;
+  transition: all 0.18s cubic-bezier(0.32,0.72,0,1) !important;
+  letter-spacing: 0.01em !important;
+}
+[data-testid="stDownloadButton"] > button:hover {
+  border-color: rgba(200,168,75,0.35) !important;
+  color: var(--gold) !important;
+  background: rgba(200,168,75,0.05) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   DATAFRAME
+═══════════════════════════════════════════════════════ */
+[data-testid="stDataFrame"] {
+  border: 1px solid var(--gold-xlo) !important;
+  border-radius: 10px !important;
+  overflow: hidden !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   CODE BLOCK
+═══════════════════════════════════════════════════════ */
+[data-testid="stCode"], .stCodeBlock pre {
+  background: var(--s3) !important;
+  border: 1px solid var(--gold-xlo) !important;
+  border-radius: 10px !important;
+  color: var(--tx2) !important;
+  font-size: 11.5px !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   IMAGE
+═══════════════════════════════════════════════════════ */
+[data-testid="stImage"] img {
+  border-radius: 12px !important;
+  border: 1px solid var(--gold-xlo) !important;
+  box-shadow: 0 0 40px rgba(200,168,75,0.06) !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   SPINNER
+═══════════════════════════════════════════════════════ */
+[data-testid="stSpinner"] > div { border-top-color: var(--gold) !important; }
+
+/* ═══════════════════════════════════════════════════════
+   VEGA / ALTAIR CHART
+═══════════════════════════════════════════════════════ */
+[data-testid="stArrowVegaLiteChart"] {
+  background: var(--s1) !important;
+  border: 1px solid var(--gold-xlo) !important;
+  border-radius: 14px !important;
+  padding: 18px !important;
+}
+
+/* ═══════════════════════════════════════════════════════
+   DIVIDER
+═══════════════════════════════════════════════════════ */
+hr { border-color: var(--gold-xlo) !important; margin: 24px 0 !important; }
+
+/* ═══════════════════════════════════════════════════════
+   TEXT AREA (copy box)
+═══════════════════════════════════════════════════════ */
+[data-testid="stTextArea"] textarea {
+  background: var(--s3) !important;
+  border: 1px solid var(--gold-xlo) !important;
+  border-radius: 10px !important;
+  color: var(--tx2) !important;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+  font-size: 11.5px !important;
+}
+[data-testid="stTextArea"] textarea:focus {
+  border-color: var(--gold-lo) !important;
+  box-shadow: 0 0 0 2px rgba(200,168,75,0.12) !important;
+}
 </style>"""
 
 
@@ -522,89 +826,82 @@ hr { border-color: var(--border) !important; margin: 1rem 0 !important; }
 
 def _header_html() -> str:
     return """
-<div style="
-  position:sticky;top:0;z-index:100;
-  background:rgba(0,0,0,0.96);
-  backdrop-filter:blur(20px);
-  border-bottom:1px solid #3a3000;
-  padding:0 32px;
-  display:flex;align-items:center;justify-content:space-between;
-  height:58px;margin-bottom:24px;
-">
-  <div style="display:flex;align-items:center;gap:10px;">
-    <div style="width:30px;height:30px;background:linear-gradient(135deg,#d4a800,#f0c000);
-      border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;">&#128202;</div>
-    <span style="font-family:Arial,sans-serif;font-weight:800;font-size:18px;color:#d4a800;letter-spacing:-0.3px;">
-      Excel Automation Studio
-    </span>
+<div class="prp-header">
+  <div class="prp-logo">
+    <div class="prp-logo-mark">&#9678;</div>
+    <div>
+      <div class="prp-brand-name">PRP Automation Studio</div>
+      <div class="prp-brand-sub">AB InBev &middot; TPRM &amp; Risk Intelligence</div>
+    </div>
   </div>
-  <div style="display:flex;align-items:center;gap:12px;">
-    <span style="font-family:Arial,sans-serif;font-size:11px;color:#d4a800;background:#1a1a1a;
-      border:1px solid #3a3000;border-radius:6px;padding:4px 10px;font-weight:700;">
-      AB InBev &middot; TPRM / Risk Automation
-    </span>
-    <span style="font-family:Arial,sans-serif;font-size:11px;color:#d4a800;background:#1a1a1a;
-      border:1px solid #3a3000;border-radius:6px;padding:4px 10px;font-weight:700;">
-      8 Reports
-    </span>
+  <div class="prp-header-right">
+    <span class="prp-badge prp-badge-live">Live</span>
+    <span class="prp-badge">8 Reports</span>
+    <span class="prp-badge">AB InBev</span>
   </div>
 </div>"""
 
 
-def _kpi_row_html(result: "RunResult | None" = None) -> str:
+def _kpi_strip_html(result: "RunResult | None" = None) -> str:
     n_outputs = len(result.outputs) if result else 0
     n_tables  = sum(len(s) for s in result.tables.values()) if result else 0
-    status_html = (
-        '<span class="badge badge-green">&#10003; Completed</span>' if result and result.ok
-        else '<span class="badge badge-red">&#10007; Error</span>' if result
-        else '<span class="badge badge-gray">&#8212;</span>'
-    )
-    cards = [
-        ("Total Reports",  "8",           "8 automation scripts"),
-        ("Script Groups",  "7",           "Daigram 1/2/3 &middot; Slide 12"),
-        ("Input Sheets",   "3",           "TPRM &middot; OneTrust &middot; Risk"),
-        ("Output Files",   str(n_outputs) if result else "&mdash;", "From last run"),
-        ("Tables",         str(n_tables)  if result else "&mdash;", "Sheets in output"),
-        ("Run Status",     status_html,   "&nbsp;"),
+
+    if result and result.ok:
+        status = '<span class="badge badge-green">&#9679;&nbsp; Success</span>'
+    elif result:
+        status = '<span class="badge badge-red">&#9679;&nbsp; Error</span>'
+    else:
+        status = '<span class="badge badge-gray">&mdash;&nbsp; Idle</span>'
+
+    cells = [
+        ("Total Reports",  "8",                              "Automation scripts"),
+        ("Script Groups",  "7",                              "Diagram &middot; Slide 12"),
+        ("Input Sheets",   "3",                              "TPRM &middot; OneTrust &middot; Risk"),
+        ("Output Files",   str(n_outputs) if result else "—", "From last run"),
+        ("Data Tables",    str(n_tables)  if result else "—", "Sheets in output"),
+        ("Run Status",     status,                           "&nbsp;"),
     ]
-    inner = "".join(
-        f'<div class="kpi-card">'
-        f'<div class="kpi-label">{lbl}</div>'
-        f'<div class="kpi-val">{val}</div>'
-        f'<div class="kpi-sub">{sub}</div>'
-        f'</div>'
-        for lbl, val, sub in cards
-    )
-    return f'<div class="kpi-grid">{inner}</div>'
+
+    html = ""
+    for lbl, val, detail in cells:
+        is_badge = "<span" in str(val)
+        val_class = "kpi-value kpi-value-sm" if is_badge else "kpi-value"
+        html += f"""
+<div class="kpi-cell">
+  <div class="kpi-eyebrow">{lbl}</div>
+  <div class="{val_class}">{val}</div>
+  <div class="kpi-detail">{detail}</div>
+</div>"""
+    return f'<div class="kpi-strip">{html}</div>'
 
 
-def _section_label(text: str) -> str:
+def _section_label(num: str, text: str) -> str:
     return (
-        f'<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.7px;'
-        f'color:#7a6200;font-weight:600;margin:16px 0 10px;">{text}</div>'
+        f'<div class="prp-label">'
+        f'<span class="prp-label-num">{num}</span>'
+        f'<span>{text}</span>'
+        f'</div>'
     )
 
 
 def _info_card_html(sheet: str, notes: str, group: str) -> str:
     return f"""
-<div class="section-card" style="margin-top:10px;">
-  <div class="section-header">
-    <div class="section-title-block">
-      <div class="section-dot"></div>
-      <div>
-        <div class="section-title">{group}</div>
-        <div class="section-desc">{notes}</div>
-      </div>
+<div class="info-card">
+  <div class="info-card-head">
+    <div class="info-card-dot"></div>
+    <div>
+      <div class="info-card-title">{group}</div>
+      <div class="info-card-desc">{notes}</div>
     </div>
   </div>
-  <div class="metrics-row" style="grid-template-columns:1fr 1fr;">
-    <div class="metric-box">
-      <div class="metric-label">Required Sheet</div>
-      <div style="font-family:Arial,sans-serif;font-size:12px;color:#d4a800;margin-top:4px;">{sheet}</div>
+  <div class="info-card-meta">
+    <div class="info-meta-cell">
+      <div class="info-meta-lbl">Required Sheet</div>
+      <div class="info-meta-val">{sheet}</div>
     </div>
-    <div class="metric-box">
-      <div class="metric-label">Format</div>
-      <div style="font-family:Arial,sans-serif;font-size:12px;color:#b08800;margin-top:4px;">.xlsx + chart</div>
+    <div class="info-meta-cell">
+      <div class="info-meta-lbl">Output Format</div>
+      <div class="info-meta-val">.xlsx + Charts</div>
     </div>
   </div>
 </div>"""
@@ -615,60 +912,78 @@ def _info_card_html(sheet: str, notes: str, group: str) -> str:
 # ---------------------------------------------------------------------------
 
 def render_results(entry: ScriptEntry, result: RunResult, fmt: str) -> None:
-    # ── Metrics row ────────────────────────────────────────────────────────
     n_tables = sum(len(s) for s in result.tables.values())
-    status_badge = (
-        '<span class="badge badge-green">&#10003; Completed</span>'
-        if result.ok else
-        f'<span class="badge badge-red">&#10007; Error &mdash; code {result.returncode}</span>'
-    )
+
+    if result.ok:
+        status_badge = '<span class="badge badge-green">&#10003;&nbsp; Completed</span>'
+        dot_color    = "var(--green)"
+    else:
+        status_badge = f'<span class="badge badge-red">&#10007;&nbsp; Error &mdash; code {result.returncode}</span>'
+        dot_color    = "var(--red)"
+
+    # ── Run summary card ────────────────────────────────────────────────────
     st.markdown(f"""
-<div class="section-card">
-  <div class="section-header">
-    <div class="section-title-block">
-      <div class="section-dot" style="background:{'#4ab840' if result.ok else '#d44040'};"></div>
+<div class="prp-card" style="margin-bottom:20px;">
+  <div class="prp-card-accent-bar"></div>
+  <div class="prp-card-header">
+    <div class="prp-card-title-group">
+      <div class="prp-card-dot" style="background:{dot_color};box-shadow:0 0 10px {dot_color};"></div>
       <div>
-        <div class="section-title">{entry.label}</div>
-        <div class="section-desc">{entry.group}</div>
+        <div class="prp-card-title">{entry.label}</div>
+        <div class="prp-card-sub">{entry.group}</div>
       </div>
     </div>
     <div>{status_badge}</div>
   </div>
-  <div class="metrics-row">
-    <div class="metric-box">
-      <div class="metric-label">Script</div>
-      <div class="metric-val">{entry.id.upper()}</div>
+  <div class="result-band">
+    <div class="result-cell">
+      <div class="result-cell-label">Script ID</div>
+      <div class="result-cell-value">{entry.id.upper()}</div>
     </div>
-    <div class="metric-box">
-      <div class="metric-label">Output Files</div>
-      <div class="metric-val">{len(result.outputs)}</div>
+    <div class="result-cell">
+      <div class="result-cell-label">Output Files</div>
+      <div class="result-cell-value">{len(result.outputs)}</div>
     </div>
-    <div class="metric-box">
-      <div class="metric-label">Tables</div>
-      <div class="metric-val">{n_tables}</div>
+    <div class="result-cell">
+      <div class="result-cell-label">Data Tables</div>
+      <div class="result-cell-value">{n_tables}</div>
     </div>
-    <div class="metric-box">
-      <div class="metric-label">Return Code</div>
-      <div class="metric-val" style="color:{'#4ab840' if result.ok else '#d44040'};">{result.returncode}</div>
+    <div class="result-cell">
+      <div class="result-cell-label">Exit Code</div>
+      <div class="result-cell-value" style="color:{'var(--green)' if result.ok else 'var(--red)'};">{result.returncode}</div>
     </div>
   </div>
 </div>""", unsafe_allow_html=True)
 
-    with st.expander("Script log (stdout / stderr)", expanded=not result.ok):
+    # ── Script log ──────────────────────────────────────────────────────────
+    with st.expander("Script log  ·  stdout / stderr", expanded=not result.ok):
         if result.stdout.strip():
             st.code(result.stdout, language="text")
         if result.stderr.strip():
-            st.markdown(_section_label("stderr"), unsafe_allow_html=True)
+            st.markdown(
+                '<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;'
+                'color:var(--tx3);margin:10px 0 6px;font-family:var(--font);">stderr</div>',
+                unsafe_allow_html=True,
+            )
             st.code(result.stderr, language="text")
         if not result.stdout.strip() and not result.stderr.strip():
-            st.markdown('<span style="color:#7a6200;font-size:12px;">No console output</span>', unsafe_allow_html=True)
+            st.markdown(
+                '<div style="color:var(--tx3);font-size:12px;padding:4px 0;'
+                'font-family:var(--font);">No console output.</div>',
+                unsafe_allow_html=True,
+            )
 
     if not result.outputs:
         st.warning("The script produced no output file.")
         return
 
-    # ── Downloads ──────────────────────────────────────────────────────────
-    st.markdown(_section_label("Downloads"), unsafe_allow_html=True)
+    # ── Downloads ───────────────────────────────────────────────────────────
+    st.markdown(
+        '<div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.12em;'
+        'color:var(--tx3);font-weight:700;margin:28px 0 12px;font-family:var(--font);">'
+        'Downloads</div>',
+        unsafe_allow_html=True,
+    )
     dl_cols = st.columns(min(4, len(result.outputs)))
     for i, (name, data) in enumerate(result.outputs):
         mime = (
@@ -677,83 +992,116 @@ def render_results(entry: ScriptEntry, result: RunResult, fmt: str) -> None:
             "image/png" if name.lower().endswith(".png") else
             "application/octet-stream"
         )
-        icon = "&#128202;" if name.endswith(".xlsx") else "&#128444;"
+        icon = "⬇  " + name
         dl_cols[i % len(dl_cols)].download_button(
-            f"{icon}  {name}", data=data, file_name=name, mime=mime,
+            icon, data=data, file_name=name, mime=mime,
             key=f"dl_{entry.id}_{i}", use_container_width=True,
         )
 
-    # ── Chart preview ──────────────────────────────────────────────────────
-    st.markdown(_section_label("Chart Preview"), unsafe_allow_html=True)
+    # ── Chart preview ───────────────────────────────────────────────────────
     png_outputs = [(n, d) for n, d in result.outputs if n.lower().endswith(".png")]
     rendered_any = False
 
     if png_outputs:
+        st.markdown(
+            '<div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.12em;'
+            'color:var(--tx3);font-weight:700;margin:28px 0 12px;font-family:var(--font);">'
+            'Chart Preview</div>',
+            unsafe_allow_html=True,
+        )
         img_cols = st.columns(len(png_outputs))
         for col, (name, data) in zip(img_cols, png_outputs):
             with col:
                 st.image(data, caption=name, use_container_width=True)
         rendered_any = True
 
+    chart_items = []
     for fname, sheets in result.tables.items():
         for sheet_name, df in sheets.items():
-            chart_df = _chartable(df)
-            if chart_df is not None and len(chart_df.columns) <= 6:
+            cdf = _chartable(df)
+            if cdf is not None and len(cdf.columns) <= 6:
+                chart_items.append((fname, sheet_name, cdf))
+
+    if chart_items:
+        st.markdown(
+            '<div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.12em;'
+            'color:var(--tx3);font-weight:700;margin:28px 0 12px;font-family:var(--font);">'
+            'Data Charts</div>',
+            unsafe_allow_html=True,
+        )
+        n_cols = min(2, len(chart_items))
+        chart_cols = st.columns(n_cols) if n_cols > 1 else [st]
+        for idx, (fname, sheet_name, cdf) in enumerate(chart_items):
+            with chart_cols[idx % n_cols]:
                 st.markdown(
-                    f'<div style="font-size:11px;color:#7a6200;margin-bottom:6px;">'
-                    f'{fname} &rarr; {sheet_name}</div>', unsafe_allow_html=True,
+                    f'<div class="chart-label">{sheet_name}</div>',
+                    unsafe_allow_html=True,
                 )
                 try:
-                    st.bar_chart(chart_df, stack=True, use_container_width=True)
+                    st.bar_chart(cdf, stack=True, use_container_width=True)
                     rendered_any = True
                 except Exception:
                     pass
 
-    if not rendered_any:
+    if not rendered_any and not png_outputs:
         st.markdown(
-            '<div style="color:#7a6200;font-size:12px;padding:8px 0;">No chartable data detected.</div>',
+            '<div style="color:var(--tx3);font-size:12px;padding:10px 0;'
+            'font-family:var(--font);">No chartable data detected in output.</div>',
             unsafe_allow_html=True,
         )
-    elif not png_outputs:
+    elif chart_items and not png_outputs:
         st.markdown(
-            '<div style="color:#7a6200;font-size:11px;margin-top:4px;">'
-            'Re-rendered from output data &mdash; downloaded .xlsx has the original styled chart.</div>',
+            '<div style="color:var(--tx3);font-size:10.5px;margin-top:6px;'
+            'font-family:var(--font);">Re-rendered from output data — '
+            'downloaded .xlsx contains the original styled charts.</div>',
             unsafe_allow_html=True,
         )
 
-    # ── Output tables ──────────────────────────────────────────────────────
-    st.markdown(_section_label("Output Tables"), unsafe_allow_html=True)
+    # ── Output tables ────────────────────────────────────────────────────────
+    st.markdown(
+        '<div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.12em;'
+        'color:var(--tx3);font-weight:700;margin:28px 0 12px;font-family:var(--font);">'
+        'Output Tables</div>',
+        unsafe_allow_html=True,
+    )
     for fname, sheets in result.tables.items():
         for sheet_name, df in sheets.items():
             df = _trim_sparse_rows(df)
             df = _trim_sparse_cols(df)
             st.markdown(f"""
-<div class="section-card" style="margin-bottom:14px;">
-  <div class="section-header">
-    <div class="section-title-block">
-      <div class="section-dot"></div>
+<div class="prp-card" style="margin-bottom:16px;">
+  <div class="prp-card-header">
+    <div class="prp-card-title-group">
+      <div class="prp-card-dot"></div>
       <div>
-        <div class="section-title">{sheet_name}</div>
-        <div class="section-desc">{fname} &nbsp;&middot;&nbsp; {len(df)} rows &times; {len(df.columns)} cols</div>
+        <div class="prp-card-title">{sheet_name}</div>
+        <div class="prp-card-sub">{fname} &nbsp;&middot;&nbsp; {len(df)} rows &times; {len(df.columns)} cols</div>
       </div>
     </div>
   </div>
-  <div style="padding:14px 18px 4px;">""", unsafe_allow_html=True)
+  <div class="prp-card-body">""", unsafe_allow_html=True)
+
             st.dataframe(df, use_container_width=True, hide_index=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-            with st.expander(f"Copy '{sheet_name}' as text"):
-                safe_key = f"cp_{entry.id}_{fname}_{sheet_name}".replace(" ", "_")
+
+            safe_key = f"cp_{entry.id}_{fname}_{sheet_name}".replace(" ", "_")
+            with st.expander(f"Copy as text  ·  {sheet_name}"):
                 if fmt == "Markdown":
                     try:
                         text = df.to_markdown(index=False)
                     except Exception:
                         text = df.to_csv(sep="\t", index=False)
-                    st.text_area("", text, height=220, key=safe_key + "_md", label_visibility="collapsed")
+                    st.text_area("", text, height=200, key=safe_key + "_md",
+                                 label_visibility="collapsed")
                 else:
                     tsv = _clean_for_tsv(df).to_csv(sep="\t", index=False, lineterminator="\r\n")
-                    st.caption("Click inside the box, Ctrl+A to select all, Ctrl+C to copy, then paste into Excel — columns split automatically.")
-                    st.text_area("", tsv, height=220, key=safe_key, label_visibility="collapsed")
-            st.markdown("</div>", unsafe_allow_html=True)
+                    st.caption(
+                        "Click inside · Ctrl+A to select all · Ctrl+C to copy · "
+                        "paste into Excel — columns split automatically."
+                    )
+                    st.text_area("", tsv, height=200, key=safe_key,
+                                 label_visibility="collapsed")
+
+            st.markdown("</div></div>", unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -762,67 +1110,79 @@ def render_results(entry: ScriptEntry, result: RunResult, fmt: str) -> None:
 
 def main() -> None:
     st.set_page_config(
-        page_title="Excel Automation Studio",
-        page_icon="📊",
+        page_title="PRP Automation Studio — AB InBev",
+        page_icon="⬡",
         layout="wide",
         initial_sidebar_state="collapsed",
     )
+
     st.markdown(_CSS, unsafe_allow_html=True)
     st.markdown(_header_html(), unsafe_allow_html=True)
 
-    # Resolve last result for dynamic KPI
     last_result: "RunResult | None" = st.session_state.get("last_result")
 
-    # ── KPI row ────────────────────────────────────────────────────────────
-    padding = '<div style="padding:0 32px;">'
-    st.markdown(padding + _kpi_row_html(last_result) + "</div>", unsafe_allow_html=True)
+    # ── KPI strip ─────────────────────────────────────────────────────────
+    st.markdown('<div class="prp-wrap">', unsafe_allow_html=True)
+    st.markdown(_kpi_strip_html(last_result), unsafe_allow_html=True)
 
-    # ── Upload + Report selector ───────────────────────────────────────────
-    st.markdown(padding, unsafe_allow_html=True)
-    col_left, col_right = st.columns([1, 1], gap="large")
+    # ── Input + Selector (2 columns) ──────────────────────────────────────
+    col_up, col_sel = st.columns([5, 7], gap="large")
 
-    with col_left:
-        st.markdown(_section_label("1 &middot; Input Workbook"), unsafe_allow_html=True)
+    with col_up:
+        st.markdown(_section_label("1", "Upload Workbook"), unsafe_allow_html=True)
         uploaded = st.file_uploader(
-            "Upload workbook",
+            "Workbook",
             type=["xlsx"],
             label_visibility="collapsed",
         )
         if uploaded:
             st.markdown(
-                f'<div style="font-size:12px;color:#4ab840;margin-top:6px;font-family:Arial,sans-serif;">'
-                f'&#10003; &nbsp;<strong style="color:#d4a800;">{uploaded.name}</strong>'
-                f'&nbsp;<span style="color:#7a6200;">({uploaded.size/1024:.1f} KB)</span></div>',
+                f'<div style="margin-top:10px;padding:12px 16px;background:rgba(77,187,128,0.07);'
+                f'border:1px solid rgba(77,187,128,0.2);border-radius:10px;">'
+                f'<span style="color:var(--green);font-size:11px;font-weight:700;font-family:var(--font);">'
+                f'&#10003;&nbsp; Ready</span>'
+                f'<span style="color:var(--tx1);font-size:12px;font-weight:600;font-family:var(--font);margin-left:10px;">'
+                f'{uploaded.name}</span>'
+                f'<span style="color:var(--tx3);font-size:11px;font-family:var(--font);margin-left:8px;">'
+                f'{uploaded.size/1024:.1f} KB</span>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
         else:
             st.markdown(
-                '<div style="font-size:11px;color:#7a6200;margin-top:6px;font-family:Arial,sans-serif;">'
-                'Accepts .xlsx &middot; same workbook the scripts expect</div>',
+                '<div style="margin-top:10px;font-size:11.5px;color:var(--tx3);'
+                'font-family:var(--font);">Accepts .xlsx &middot; '
+                'the same workbook your scripts expect</div>',
                 unsafe_allow_html=True,
             )
 
-    with col_right:
-        st.markdown(_section_label("2 &middot; Select Report"), unsafe_allow_html=True)
+    with col_sel:
+        st.markdown(_section_label("2", "Select Report"), unsafe_allow_html=True)
 
         groups: dict[str, list[ScriptEntry]] = {}
         for e in REGISTRY:
             groups.setdefault(e.group, []).append(e)
         group_names = list(groups.keys())
 
-        _short = ["Daigram 1", "Daigram 2", "Daigram 3", "Slide 12·1", "Slide 12·2", "Slide 12·3", "Diagram 4"]
-        short_of = dict(zip(group_names, _short))
+        _short = {
+            group_names[0]: "Diagram 1",
+            group_names[1]: "Diagram 2",
+            group_names[2]: "Diagram 3",
+            group_names[3]: "Slide 12 · 1st",
+            group_names[4]: "Slide 12 · 2nd",
+            group_names[5]: "Slide 12 · 3rd",
+            group_names[6]: "Diagram 4",
+        }
 
         if "active_group" not in st.session_state:
             st.session_state["active_group"] = group_names[0]
 
-        # Tab row — explicit buttons so active group is always known
         tab_cols = st.columns(len(group_names))
         for col, gname in zip(tab_cols, group_names):
             with col:
                 is_active = st.session_state["active_group"] == gname
                 if st.button(
-                    short_of.get(gname, gname),
+                    _short.get(gname, gname),
                     key=f"grp_{gname}",
                     type="primary" if is_active else "secondary",
                     use_container_width=True,
@@ -830,7 +1190,8 @@ def main() -> None:
                     st.session_state["active_group"] = gname
                     st.rerun()
 
-        # Show only the active group's variants
+        st.markdown('<div style="margin-top:14px;"></div>', unsafe_allow_html=True)
+
         active_group = st.session_state["active_group"]
         g_entries = groups[active_group]
         labels = [e.label for e in g_entries]
@@ -842,49 +1203,66 @@ def main() -> None:
         )
         entry = g_entries[labels.index(selected_label)]
         st.session_state["selected_entry"] = entry
+
         st.markdown(
             _info_card_html(entry.sheet, entry.notes, entry.group),
             unsafe_allow_html=True,
         )
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    # ── Divider ───────────────────────────────────────────────────────────
+    st.markdown(
+        '<hr style="border-color:var(--gold-xlo);margin:28px 0;">',
+        unsafe_allow_html=True,
+    )
 
-    # ── Options & Run ──────────────────────────────────────────────────────
-    st.markdown(padding, unsafe_allow_html=True)
-    st.markdown(_section_label("3 &middot; Options &amp; Run"), unsafe_allow_html=True)
-    opt_col, run_col = st.columns([2, 1], gap="large")
+    # ── Options & Run ─────────────────────────────────────────────────────
+    col_opt, col_run = st.columns([6, 3], gap="large")
 
-    with opt_col:
-        fmt_raw = st.radio("Copy format", ["TSV (Excel / Sheets)", "Markdown"], horizontal=True)
+    with col_opt:
+        st.markdown(_section_label("3", "Options"), unsafe_allow_html=True)
+        fmt_raw = st.radio(
+            "Copy format",
+            ["TSV (Excel / Sheets)", "Markdown"],
+            horizontal=True,
+        )
         fmt = "Markdown" if "Markdown" in fmt_raw else "TSV"
+        st.markdown(
+            '<div style="margin-top:8px;font-size:11px;color:var(--tx3);font-family:var(--font);">'
+            'TSV — paste directly into Excel or Google Sheets with columns split automatically.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
-    with run_col:
+    with col_run:
+        st.markdown(_section_label("4", "Execute"), unsafe_allow_html=True)
+        st.markdown('<div class="run-wrap">', unsafe_allow_html=True)
         run = st.button(
-            "&#9654;  Run Report",
+            "▶  Run Report",
             type="primary",
             disabled=uploaded is None,
             use_container_width=True,
         )
+        st.markdown('</div>', unsafe_allow_html=True)
         if uploaded is None:
             st.markdown(
-                '<div style="font-size:11px;color:#7a6200;text-align:center;margin-top:4px;'
-                'font-family:Arial,sans-serif;">Upload a workbook to enable</div>',
+                '<div style="font-size:10.5px;color:var(--tx3);text-align:center;'
+                'margin-top:8px;font-family:var(--font);">Upload a workbook first</div>',
                 unsafe_allow_html=True,
             )
 
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown('<hr style="border-color:#3a3000;margin:16px 32px;">', unsafe_allow_html=True)
-
+    # ── How it works ──────────────────────────────────────────────────────
+    st.markdown('<div style="margin-top:20px;"></div>', unsafe_allow_html=True)
     with st.expander("How it works"):
         st.markdown(
             "1. **Upload** your `.xlsx` workbook.\n"
-            "2. **Select** a report group tab, then pick a variant.\n"
-            "3. **Run** — the script executes in an isolated temp folder; you get the log, "
-            "chart preview, output tables with copy, and the exact `.xlsx` the script generates.\n\n"
-            "> Each report requires a specific sheet — shown in the info card."
+            "2. **Select** a report group, then pick a variant.\n"
+            "3. **Run** — the script executes in an isolated temp folder. "
+            "You get the log, chart preview, output tables with copy, "
+            "and the exact `.xlsx` the script generates.\n\n"
+            "> Each report requires a specific sheet — shown in the script info card."
         )
 
-    # ── Execute ────────────────────────────────────────────────────────────
+    # ── Execute ───────────────────────────────────────────────────────────
     if run and uploaded is not None:
         with st.spinner(f"Running  ·  {entry.label}"):
             try:
@@ -895,17 +1273,29 @@ def main() -> None:
             except Exception as exc:
                 st.error(f"Could not launch script: {exc}")
                 return
-        st.session_state["last_result"]    = result
-        st.session_state["last_entry_id"]  = entry.id
-        st.session_state["last_fmt"]       = fmt
+        st.session_state["last_result"]   = result
+        st.session_state["last_entry_id"] = entry.id
+        st.session_state["last_fmt"]      = fmt
         st.rerun()
 
     # ── Render persisted results ───────────────────────────────────────────
     if "last_result" in st.session_state:
+        st.markdown(
+            '<hr style="border-color:var(--gold-xlo);margin:32px 0 28px;">',
+            unsafe_allow_html=True,
+        )
+        st.markdown(_section_label("↓", "Results"), unsafe_allow_html=True)
         _entry = REGISTRY_BY_ID[st.session_state["last_entry_id"]]
-        st.markdown(padding, unsafe_allow_html=True)
-        render_results(_entry, st.session_state["last_result"], st.session_state["last_fmt"])
-        st.markdown("</div>", unsafe_allow_html=True)
+        render_results(
+            _entry,
+            st.session_state["last_result"],
+            st.session_state["last_fmt"],
+        )
+
+    st.markdown('</div>', unsafe_allow_html=True)  # /prp-wrap
+
+    # Bottom spacer
+    st.markdown('<div style="height:60px;"></div>', unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
