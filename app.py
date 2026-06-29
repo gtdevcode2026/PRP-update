@@ -296,7 +296,19 @@ def _chartable(df: pd.DataFrame):
     chart_df = chart_df[mask]
     if chart_df.empty:
         return None
-    return chart_df.set_index(label)
+    chart_df = chart_df.set_index(label)
+    # Sanitize column names — altair v6 parse_shorthand crashes on empty strings
+    # or names containing ':' which it interprets as type qualifiers.
+    chart_df.columns = [
+        (str(c).replace(":", "_").replace(".", "_") or f"col_{i}")
+        for i, c in enumerate(chart_df.columns)
+    ]
+    chart_df.index.name = (
+        str(chart_df.index.name).replace(":", "_").replace(".", "_")
+        if chart_df.index.name
+        else "label"
+    )
+    return chart_df
 
 
 # ---------------------------------------------------------------------------
@@ -691,8 +703,11 @@ def render_results(entry: ScriptEntry, result: RunResult, fmt: str) -> None:
                     f'<div style="font-size:11px;color:#7a6200;margin-bottom:6px;">'
                     f'{fname} &rarr; {sheet_name}</div>', unsafe_allow_html=True,
                 )
-                st.bar_chart(chart_df, stack=True, use_container_width=True)
-                rendered_any = True
+                try:
+                    st.bar_chart(chart_df, stack=True, use_container_width=True)
+                    rendered_any = True
+                except Exception:
+                    pass
 
     if not rendered_any:
         st.markdown(
