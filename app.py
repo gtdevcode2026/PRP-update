@@ -409,14 +409,21 @@ h1,h2,h3,h4 {
   margin-bottom: 0;
 }
 .prp-logo { display: flex; align-items: center; gap: 14px; }
-.prp-logo-mark {
-  width: 38px; height: 38px;
-  background: linear-gradient(135deg, #C8A84B 0%, #E8C84E 50%, #9A7A30 100%);
-  border-radius: 11px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 19px; line-height: 1;
-  box-shadow: 0 0 28px rgba(200,168,75,0.35), inset 0 1px 1px rgba(255,255,255,0.2);
+.prp-abinbev-logo {
+  height: 36px;
+  width: auto;
+  display: flex;
+  align-items: center;
   flex-shrink: 0;
+}
+.prp-abinbev-logo img {
+  height: 36px;
+  width: auto;
+  object-fit: contain;
+}
+.prp-abinbev-logo svg {
+  height: 36px;
+  width: auto;
 }
 .prp-brand-name {
   font-size: 15px; font-weight: 800;
@@ -760,79 +767,65 @@ h1,h2,h3,h4 {
   color: var(--tx3); padding: 8px 0 5px;
   font-family: Arial, sans-serif;
 }
-/* ── Capsule nav container ── */
+/* ── Flat nav panel ── */
 .nav-panel {
-  background: #080808;
-  border: 1px solid rgba(200,168,75,0.09);
-  border-radius: 18px;
-  padding: 5px;
+  padding: 4px 0;
   position: sticky;
   top: 80px;
-  overflow: hidden;
-  box-shadow: 0 4px 32px rgba(0,0,0,0.5);
 }
-/* Minimal section labels — no line, just dim text */
+/* Section labels with trailing rule */
 .nav-section-head {
-  font-size: 7px; font-weight: 900;
-  text-transform: uppercase; letter-spacing: 0.24em;
-  color: rgba(106,90,56,0.5);
-  padding: 7px 10px 2px;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 9px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.22em;
+  color: rgba(200,168,75,0.4);
+  padding: 10px 4px 5px;
   font-family: Arial, sans-serif;
 }
-.nav-section-sep {
-  border-top: 1px solid rgba(34,27,11,0.9);
-  margin: 3px 0 0;
-  padding-top: 4px;
+.nav-section-head::after {
+  content: '';
+  flex: 1; height: 1px;
+  background: rgba(200,168,75,0.12);
 }
-/* Item: borderless pill, no dividers */
+.nav-section-sep { margin-top: 8px; }
+/* Nav items */
 .nav-item {
-  display: flex; align-items: center; gap: 9px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  border: 1.5px solid transparent;
+  display: flex; align-items: center; gap: 11px;
+  padding: 7px 8px 7px 12px;
+  border-radius: 0 6px 6px 0;
   cursor: pointer;
-  text-decoration: none;
   min-width: 0;
   margin-bottom: 1px;
-  transition: background 0.22s;
+  box-shadow: inset 0 0 0 transparent;
+  transition: background 0.18s, box-shadow 0.18s;
 }
 .nav-item:hover:not(.active) {
-  background: rgba(200,168,75,0.055);
+  background: rgba(200,168,75,0.04);
 }
-/* Active: gradient gold ring — padding-box trick */
+/* Active: left accent via inset shadow (avoids side-stripe ban) */
 .nav-item.active {
-  background:
-    linear-gradient(#0c0c0c, #0c0c0c) padding-box,
-    linear-gradient(135deg, #C8A84B 0%, #FFD166 45%, #9A7A30 100%) border-box;
-  border-color: transparent;
+  box-shadow: inset 2px 0 0 var(--gold);
+  background: rgba(200,168,75,0.06);
 }
-/* Number badge */
+/* Number */
 .nav-item-num {
-  width: 19px; height: 19px; flex-shrink: 0;
-  border-radius: 5px;
-  background: rgba(34,27,11,0.7);
-  border: 1px solid rgba(122,101,53,0.25);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 8.5px; font-weight: 900; color: var(--tx3);
+  font-size: 10.5px; font-weight: 500;
+  color: var(--tx3); flex-shrink: 0;
+  width: 14px; text-align: right;
   font-family: Arial, sans-serif;
-  transition: background 0.22s, color 0.22s, border-color 0.22s, box-shadow 0.22s;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.18s;
 }
-.nav-item.active .nav-item-num {
-  background: var(--gold); color: #000;
-  border-color: transparent;
-  box-shadow: 0 0 9px rgba(200,168,75,0.5);
-}
-.nav-item:hover:not(.active) .nav-item-num {
-  color: var(--tx2); border-color: rgba(200,168,75,0.18);
-}
+.nav-item.active .nav-item-num { color: var(--gold); font-weight: 700; }
+.nav-item:hover:not(.active) .nav-item-num { color: var(--tx2); }
 /* Label text */
 .nav-item-text {
-  font-size: 11px; font-weight: 600;
+  font-size: 12px; font-weight: 600;
   color: var(--tx3); font-family: Arial, sans-serif;
   line-height: 1.3;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   min-width: 0;
-  transition: color 0.22s;
+  transition: color 0.18s;
 }
 .nav-item.active .nav-item-text { color: var(--tx1); font-weight: 700; }
 .nav-item:hover:not(.active) .nav-item-text { color: var(--tx2); }
@@ -852,22 +845,11 @@ iframe {
 /* ═══════════════════════════════════════════════════════
    CONTROL STRIP SECTIONS
 ═══════════════════════════════════════════════════════ */
-.ctrl-section {
-  background: var(--s1);
-  border: 1px solid var(--gold-xlo);
-  border-radius: 12px;
-  padding: 10px 12px 12px;
-  height: 100%;
-}
 .ctrl-section-label {
   font-size: 8.5px; font-weight: 800;
   text-transform: uppercase; letter-spacing: 0.16em;
   color: var(--tx3); margin-bottom: 8px;
   font-family: Arial, sans-serif;
-}
-.ctrl-section-desc {
-  background: var(--gold-xxlo) !important;
-  border-color: rgba(200,168,75,0.28) !important;
 }
 .desc-title {
   font-size: 12px; font-weight: 700;
@@ -888,10 +870,6 @@ iframe {
   border-radius: 4px; padding: 2px 7px;
   font-family: Arial, sans-serif;
 }
-.ctrl-indicator-dot {
-  width: 11px; height: 11px; border-radius: 50%;
-  margin: 24px auto 0;
-}
 .run-hint {
   font-size: 9.5px; color: var(--tx3);
   text-align: center; margin-top: 5px;
@@ -899,24 +877,8 @@ iframe {
 }
 
 /* ═══════════════════════════════════════════════════════
-   CONTROL STRIP COLUMN CARDS (:has-based)
-   Native widgets render inside stColumn, not inside a
-   custom div — so we card the stColumn itself.
+   CONTROL STRIP — flat, no cards
 ═══════════════════════════════════════════════════════ */
-[data-testid="stColumn"]:has(.ctrl-marker) {
-  background: var(--s1) !important;
-  border: 1px solid var(--gold-xlo) !important;
-  border-radius: 12px !important;
-}
-[data-testid="stColumn"]:has(.ctrl-marker) > div {
-  padding: 10px 10px 10px !important;
-}
-[data-testid="stColumn"]:has(.desc-marker) {
-  background: var(--gold-xxlo) !important;
-  border-color: rgba(200,168,75,0.28) !important;
-}
-.ctrl-marker { display: none; height: 0; overflow: hidden; }
-.desc-marker { display: none; height: 0; overflow: hidden; }
 .file-ready-compact {
   font-size: 10.5px; color: var(--tx2);
   padding: 4px 0; font-family: Arial, sans-serif;
@@ -1051,14 +1013,31 @@ _NAV_JS = """<script>
 # HTML helpers
 # ---------------------------------------------------------------------------
 
+_ABINBEV_LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 60" height="36" aria-label="AB InBev">
+  <g transform="translate(30,30)">
+    <path d="M1,-1 C3,-22 20,-24 20,-8 C14,2 4,4 1,-1Z" fill="#F5C518"/>
+    <path d="M1,-1 C3,-22 20,-24 20,-8 C14,2 4,4 1,-1Z" fill="#D4A800" transform="rotate(120,0,0)"/>
+    <path d="M1,-1 C3,-22 20,-24 20,-8 C14,2 4,4 1,-1Z" fill="#F5C518" transform="rotate(240,0,0)"/>
+  </g>
+  <text x="68" y="42" font-family="Arial Black,Arial,sans-serif" font-size="32" font-weight="900" fill="#ffffff" letter-spacing="-0.5">ABInBev</text>
+</svg>"""
+
+
 def _header_html() -> str:
-    return """
+    import base64 as _b64
+    logo_path = APP_DIR / "logo.png"
+    if logo_path.exists():
+        logo_b64 = _b64.b64encode(logo_path.read_bytes()).decode()
+        logo_el = f'<img src="data:image/png;base64,{logo_b64}" class="prp-abinbev-logo" alt="AB InBev">'
+    else:
+        logo_el = f'<div class="prp-abinbev-logo">{_ABINBEV_LOGO_SVG}</div>'
+    return f"""
 <div class="prp-header">
   <div class="prp-logo">
-    <div class="prp-logo-mark">&#9678;</div>
+    {logo_el}
     <div>
       <div class="prp-brand-name">PRP Automation Dashboard</div>
-      <div class="prp-brand-sub">AB InBev &middot; TPRM &amp; Risk Intelligence</div>
+      <div class="prp-brand-sub">TPRM &amp; Risk Intelligence</div>
     </div>
   </div>
   <div class="prp-header-right">
@@ -1150,6 +1129,78 @@ def _build_plotly_bar(chart_df: pd.DataFrame, title: str = ""):
 
 
 # ---------------------------------------------------------------------------
+# Diagram 2 — custom chart renderer
+# ---------------------------------------------------------------------------
+
+def _d2_charts(xlsx_bytes: bytes) -> int:
+    """Parse Diagram 2 Dashboard sheet and render two Plotly charts.
+    Returns the number of charts successfully rendered."""
+    import io as _io
+    import plotly.graph_objects as go
+
+    try:
+        raw = pd.read_excel(
+            _io.BytesIO(xlsx_bytes), sheet_name="Dashboard",
+            header=None, engine="openpyxl"
+        )
+    except Exception:
+        return 0
+
+    # Locate KPI table header row (contains "Metric")
+    kpi_row = next(
+        (i for i, r in raw.iterrows() if "Metric" in r.values), None
+    )
+
+    _grid  = "rgba(34,27,11,0.9)"
+    _tick  = "#A89060"
+    _font  = dict(family="Arial, sans-serif", color=_tick, size=10)
+    _hover = dict(bgcolor="#191919", bordercolor="#221B0B",
+                  font=dict(family="Arial, sans-serif", color="#F0E4C0", size=12))
+    charts = 0
+
+    # ── Improve in Supplier Response Time (KPI horizontal bar) ──────────────
+    if kpi_row is not None:
+        kv = raw.iloc[kpi_row:].copy()
+        kv.columns = kv.iloc[0]
+        kv = kv.iloc[1:].reset_index(drop=True)
+        kv = kv[kv["Metric"].notna() & (kv["Metric"].astype(str).str.strip() != "")].copy()
+        kv["Value"] = pd.to_numeric(kv["Value"], errors="coerce")
+        kv = kv.dropna(subset=["Value"])
+        kv = kv[~kv["Metric"].astype(str).str.contains("formula", case=False, na=False)]
+
+        if not kv.empty:
+            metrics = kv["Metric"].astype(str).tolist()
+            values  = kv["Value"].tolist()
+            max_val = max(values) if values else 1
+            fig2 = go.Figure()
+            fig2.add_trace(go.Bar(
+                name="", x=values, y=metrics, orientation="h",
+                marker=dict(color="rgba(200,168,75,0.78)", cornerradius=4),
+                text=[f"{v:.0%}" for v in values],
+                textposition="outside",
+                textfont=dict(color=_tick, size=10, family="Arial, sans-serif"),
+                hovertemplate="<b>%{y}</b>: <b>%{x:.0%}</b><extra></extra>",
+            ))
+            fig2.update_layout(
+                title=dict(text="Improve in Supplier Response Time",
+                           font=dict(family="Arial, sans-serif", color=_tick, size=11),
+                           x=0, xanchor="left", pad=dict(l=4, b=12)),
+                paper_bgcolor="#0d0d0d", plot_bgcolor="#0d0d0d", font=_font,
+                margin=dict(l=130, r=70, t=40, b=40),
+                xaxis=dict(gridcolor=_grid, linecolor="#2A1F08", tickformat=".0%",
+                           tickfont=_font, zeroline=False,
+                           range=[0, max_val * 1.3]),
+                yaxis=dict(gridcolor=_grid, linecolor="#2A1F08", tickfont=_font),
+                hoverlabel=_hover,
+                showlegend=False,
+            )
+            st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
+            charts += 1
+
+    return charts
+
+
+# ---------------------------------------------------------------------------
 # Results renderer
 # ---------------------------------------------------------------------------
 
@@ -1165,6 +1216,21 @@ def render_results(entry: ScriptEntry, result: RunResult, fmt: str) -> None:
     processed_sheets: list[tuple[str, str, pd.DataFrame]] = []
     for fname, sheets in result.tables.items():
         for sheet_name, df in sheets.items():
+            # Diagram 4: skip "History Used" sheet; rename Sheet1 from History.xlsx
+            if entry.id == "s4":
+                if sheet_name == "History Used":
+                    continue
+                if sheet_name == "Sheet1" and fname.lower() == "history.xlsx":
+                    sheet_name = "History.xlsx"
+            # Risks Identified: skip Open Overdue Pivot table entirely
+            if entry.id == "s3d" and sheet_name == "Open Overdue Pivot":
+                continue
+            # Suppliers in Scope: skip Pivot table entirely
+            if entry.id == "s1c" and sheet_name == "Pivot":
+                continue
+            # Risk Assessment Progress: skip Auto Pivot Summary, show the other sheets with charts
+            if entry.id in ("s2a", "s2b") and sheet_name == "Auto Pivot Summary":
+                continue
             processed_sheets.append((fname, sheet_name, _trim_sparse_cols(_trim_sparse_rows(df))))
 
     st.markdown('<hr class="output-divider">', unsafe_allow_html=True)
@@ -1172,16 +1238,21 @@ def render_results(entry: ScriptEntry, result: RunResult, fmt: str) -> None:
     # ── Row 1: Download Options | Copy Text ──────────────────────────────────
     c_dl, c_copy = st.columns([6, 4], gap="small")
 
+    filtered_outputs = [
+        (name, data) for name, data in result.outputs
+        if not (entry.id == "d1" and name.lower().endswith(".png"))
+    ]
+
     with c_dl:
         st.markdown(
             f'<div class="section-bar">'
             f'<span class="section-bar-label">Download Options</span>'
-            f'<span class="badge badge-gold">{len(result.outputs)} file{"s" if len(result.outputs) != 1 else ""}</span>'
+            f'<span class="badge badge-gold">{len(filtered_outputs)} file{"s" if len(filtered_outputs) != 1 else ""}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
-        dl_cols = st.columns(min(3, len(result.outputs)))
-        for i, (name, data) in enumerate(result.outputs):
+        dl_cols = st.columns(min(3, len(filtered_outputs)))
+        for i, (name, data) in enumerate(filtered_outputs):
             mime = (
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 if name.lower().endswith(".xlsx") else
@@ -1267,17 +1338,64 @@ def render_results(entry: ScriptEntry, result: RunResult, fmt: str) -> None:
 
     st.markdown('<div style="height:18px;"></div>', unsafe_allow_html=True)
 
-    # ── Row 2: Process · Table | Chart ───────────────────────────────────────
-    c_table, c_chart = st.columns([5, 7], gap="small")
+    # ── Chart (left) | Table (right) per sheet ───────────────────────────────
+    st.markdown(
+        '<div class="section-bar"><span class="section-bar-label">Process &middot; Preview</span></div>',
+        unsafe_allow_html=True,
+    )
 
-    with c_table:
-        st.markdown(
-            '<div class="section-bar"><span class="section-bar-label">Process &middot; Table</span></div>',
-            unsafe_allow_html=True,
-        )
-        for fname, sheet_name, df in processed_sheets:
-            row_count = len(df)
-            col_count = len(df.columns)
+    charts_rendered = 0
+    d2_xlsx_bytes = (
+        next((d for n, d in result.outputs if n.lower().endswith(".xlsx")), None)
+        if entry.id == "d2" else None
+    )
+
+    for fname, sheet_name, df in processed_sheets:
+        row_count = len(df)
+        col_count = len(df.columns)
+
+        # Determine if a chart should render for this sheet
+        show_chart = True
+        if entry.id == "d2":
+            show_chart = charts_rendered == 0
+        elif entry.id == "s4" and charts_rendered > 0:
+            show_chart = False
+        elif entry.id == "s3d" and sheet_name == "Open Overdue Pivot":
+            show_chart = False
+
+        if show_chart:
+            c_chart, c_table = st.columns([7, 5], gap="small")
+            with c_chart:
+                if entry.id == "d2":
+                    if d2_xlsx_bytes:
+                        charts_rendered = _d2_charts(d2_xlsx_bytes)
+                else:
+                    chart_df = _chartable(df)
+                    if chart_df is not None:
+                        st.plotly_chart(
+                            _build_plotly_bar(chart_df, sheet_name),
+                            use_container_width=True,
+                            config={"displayModeBar": False},
+                        )
+                        charts_rendered += 1
+            with c_table:
+                st.markdown(
+                    f'<div class="table-sheet-name">{sheet_name}'
+                    f'<span class="table-meta">{fname} &nbsp;&middot;&nbsp; {row_count}r &times; {col_count}c</span></div>',
+                    unsafe_allow_html=True,
+                )
+                st.dataframe(
+                    df.head(50),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=min(320, 38 + len(df.head(50)) * 35),
+                )
+                if row_count > 50:
+                    st.markdown(
+                        f'<div class="table-hint">Showing 50 of {row_count} rows — download .xlsx for full dataset.</div>',
+                        unsafe_allow_html=True,
+                    )
+        else:
             st.markdown(
                 f'<div class="table-sheet-name">{sheet_name}'
                 f'<span class="table-meta">{fname} &nbsp;&middot;&nbsp; {row_count}r &times; {col_count}c</span></div>',
@@ -1295,23 +1413,8 @@ def render_results(entry: ScriptEntry, result: RunResult, fmt: str) -> None:
                     unsafe_allow_html=True,
                 )
 
-    with c_chart:
-        st.markdown(
-            '<div class="section-bar"><span class="section-bar-label">Chart</span></div>',
-            unsafe_allow_html=True,
-        )
-        charts_rendered = 0
-        for fname, sheet_name, df in processed_sheets:
-            chart_df = _chartable(df)
-            if chart_df is not None:
-                st.plotly_chart(
-                    _build_plotly_bar(chart_df, sheet_name),
-                    use_container_width=True,
-                    config={"displayModeBar": False},
-                )
-                charts_rendered += 1
-        if charts_rendered == 0:
-            st.markdown('<div class="empty-chart">No chartable data in output.</div>', unsafe_allow_html=True)
+    if charts_rendered == 0 and not processed_sheets:
+        st.markdown('<div class="empty-chart">No chartable data in output.</div>', unsafe_allow_html=True)
 
     # ── Script log ────────────────────────────────────────────────────────────
     st.markdown('<div style="margin-top:20px;"></div>', unsafe_allow_html=True)
@@ -1356,13 +1459,13 @@ def main() -> None:
     group_names = list(groups.keys())
 
     _short = {
-        group_names[0]: "Diagram 1",
-        group_names[1]: "Diagram 2",
-        group_names[2]: "Diagram 3",
-        group_names[3]: "Diagram 4",
-        group_names[4]: "1st · Suppliers",
-        group_names[5]: "2nd · Assessments",
-        group_names[6]: "3rd · Risks",
+        group_names[0]: "Vendor Onboarding (Critical Tech)",
+        group_names[1]: "Response Time Reduction",
+        group_names[2]: "Reduce Long Over-Due Assessments",
+        group_names[3]: "Risk Treatment",
+        group_names[4]: "Suppliers in Scope",
+        group_names[5]: "Risk Assessment Progress",
+        group_names[6]: "Risks Identified",
     }
 
     if "active_group" not in st.session_state:
@@ -1379,7 +1482,6 @@ def main() -> None:
 
     # ── SIDEBAR ───────────────────────────────────────────────────────────────
     with col_sidebar:
-        st.markdown('<div class="sidebar-label">Diagram</div>', unsafe_allow_html=True)
         nav_html = '<div class="nav-panel">'
         for idx, gname in enumerate(group_names, 1):
             is_active = st.session_state["active_group"] == gname
@@ -1413,13 +1515,14 @@ def main() -> None:
     with col_main:
 
         # ── CONTROL STRIP: input | variant | process | description | ● | run ──
-        c_input, c_variant, c_process, c_desc, c_run = st.columns(
-            [3, 3, 2, 5, 3], gap="small"
+        fmt = "TSV"
+
+        c_input, c_variant, c_desc, c_run = st.columns(
+            [3, 3, 6, 3], gap="small"
         )
 
         # INPUT
         with c_input:
-            st.markdown('<div class="ctrl-marker"></div>', unsafe_allow_html=True)
             st.markdown('<div class="ctrl-section-label">Input</div>', unsafe_allow_html=True)
             uploaded = st.file_uploader(
                 "Workbook", type=["xlsx"], label_visibility="collapsed",
@@ -1446,7 +1549,6 @@ def main() -> None:
 
         # VARIANT
         with c_variant:
-            st.markdown('<div class="ctrl-marker"></div>', unsafe_allow_html=True)
             st.markdown('<div class="ctrl-section-label">Variant</div>', unsafe_allow_html=True)
             selected_label = st.radio(
                 "Variant", labels,
@@ -1456,20 +1558,8 @@ def main() -> None:
             entry = g_entries[labels.index(selected_label)]
             st.session_state["selected_entry"] = entry
 
-        # PROCESS (copy format)
-        with c_process:
-            st.markdown('<div class="ctrl-marker"></div>', unsafe_allow_html=True)
-            st.markdown('<div class="ctrl-section-label">Process</div>', unsafe_allow_html=True)
-            fmt_raw = st.radio(
-                "Copy format",
-                ["TSV (Excel)", "Markdown"],
-                label_visibility="collapsed",
-            )
-            fmt = "Markdown" if "Markdown" in fmt_raw else "TSV"
-
-        # DESCRIPTION (yellow highlight)
+        # DESCRIPTION
         with c_desc:
-            st.markdown('<div class="ctrl-marker desc-marker"></div>', unsafe_allow_html=True)
             st.markdown('<div class="ctrl-section-label">Description</div>', unsafe_allow_html=True)
             st.markdown(
                 f'<div class="desc-title">{entry.label}</div>'
@@ -1480,7 +1570,6 @@ def main() -> None:
 
         # RUN
         with c_run:
-            st.markdown('<div class="ctrl-marker"></div>', unsafe_allow_html=True)
             st.markdown('<div class="ctrl-section-label">Run</div>', unsafe_allow_html=True)
             run = st.button(
                 "▶  Run",
