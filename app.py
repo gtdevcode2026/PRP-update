@@ -93,13 +93,6 @@ REGISTRY: list[ScriptEntry] = [
         "Appends two summary sheets to a copy of the workbook.",
     ),
     ScriptEntry(
-        "s2b", "Slide 12 · 2nd — Assessments",
-        "Open/Closed + Overdue (90d) — standalone report, 3 sheets",
-        "Slide 12 2nd daigram Automation/automation2.py",
-        "OneTrust Assessment",
-        "Most complete 2nd-diagram variant: adds an overdue-by-zone report.",
-    ),
-    ScriptEntry(
         "s3d", "Slide 12 · 3rd — Risks",
         "Open/Overdue pivot (Aging > 90 days) — most complete risk report",
         "Slide 12 3rd daigram Automation/automation4.py",
@@ -1042,7 +1035,7 @@ def _header_html() -> str:
   </div>
   <div class="prp-header-right">
     <span class="prp-badge prp-badge-live">Live</span>
-    <span class="prp-badge">8 Reports</span>
+    <span class="prp-badge">7 Reports</span>
     <span class="prp-badge">AB InBev</span>
   </div>
 </div>"""

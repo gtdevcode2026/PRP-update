@@ -1,8 +1,27 @@
 # PRP Automation Dashboard
 
-AB InBev TPRM & Risk Intelligence dashboard built with Streamlit.
+AB InBev TPRM & Risk Intelligence dashboard. It runs entirely in the browser —
+no Python, no install, no server required to use it.
 
-## Prerequisites
+## Quick start — just open it (recommended)
+
+1. Download this repo: **Code → Download ZIP**, then unzip it.
+2. Keep `index.html` next to the `pyodide/` folder.
+3. **Double-click `index.html`.** Upload your Excel workbook, pick a report, click **Run**.
+
+Everything (the Python runtime, pandas, matplotlib, all automation scripts)
+is bundled in the `pyodide/` folder and runs offline in your browser. Recommended
+browsers: Chrome or Edge.
+
+> Sharing it with others via GitHub? See **[DEPLOY.md](DEPLOY.md)** — the `pyodide/`
+> runtime is ~95 MB, so publish with `git push` (GitHub's web upload caps at 25 MB).
+
+## Developer setup (optional — Flask/Streamlit backends)
+
+The scripts can also be run through a small server (`server.py` for Flask, or the
+legacy `app.py` for Streamlit) instead of the offline bundle.
+
+### Prerequisites
 
 - Python 3.9 or higher
 - pip

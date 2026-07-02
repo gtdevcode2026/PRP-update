@@ -1,0 +1,3 @@
+# The Pyodide offline runtime is a generated bundle — never touch its bytes
+# (no line-ending conversion, no diffing). Keeps it identical on every OS.
+pyodide/** binary
