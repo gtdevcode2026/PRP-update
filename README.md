@@ -16,42 +16,9 @@ browsers: Chrome or Edge.
 > Sharing it with others via GitHub? See **[DEPLOY.md](DEPLOY.md)** — the `pyodide/`
 > runtime is ~95 MB, so publish with `git push` (GitHub's web upload caps at 25 MB).
 
-## Developer setup (optional — Flask/Streamlit backends)
-
-The scripts can also be run through a small server (`server.py` for Flask, or the
-legacy `app.py` for Streamlit) instead of the offline bundle.
-
-### Prerequisites
-
-- Python 3.9 or higher
-- pip
-
-## Setup
-
-1. **Clone the repository**
-
-   ```bash
-   git clone https://github.com/gtdevcode2026/PRP-update.git
-   cd PRP-update
-   ```
-
-2. **Install dependencies**
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Place the input file**
-
-   Copy `PRP Sample Jun (2).xlsx` into the project root (same folder as `app.py`).
-
-## Running the App
-
-```bash
-python -m streamlit run app.py
-```
-
-The dashboard opens automatically at `http://localhost:8501`.
+> **`index.html` is the only launcher.** There is no server to run — all the
+> automation scripts are embedded in the page and execute in the browser via the
+> bundled Pyodide runtime. Just open `index.html`.
 
 ## Usage
 
