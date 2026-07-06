@@ -63,7 +63,7 @@
 html { height: 100%; -webkit-text-size-adjust: 100%; }
 body {
   min-height: 100%;
-  background: linear-gradient(145deg, #0c0900 0%, #030203 45%, #0b0800 100%);
+  background: #040200;
   color: var(--tx-body);
   font-family: var(--font);
   font-size: 13px;
@@ -90,12 +90,14 @@ body > * { position: relative; z-index: 1; }
 /* ── AMBIENT GOLD AURORA ── */
 .bg-fx { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 .bg-aurora {
-  position: absolute; inset: -12%;
+  position: absolute; inset: -25%;
   background:
-    radial-gradient(72% 68% at 88% -4%, rgba(237,185,45,0.52), transparent 58%),
-    radial-gradient(58% 62% at -6% 108%, rgba(190,128,18,0.38), transparent 56%),
-    radial-gradient(42% 48% at 52% 58%, rgba(155,105,12,0.18), transparent 64%),
-    radial-gradient(30% 35% at 20% 20%, rgba(237,201,79,0.10), transparent 55%);
+    radial-gradient(ellipse 110% 90% at 28% 18%, #c48a08, transparent 55%),
+    radial-gradient(ellipse 90% 110% at 78% 78%, #9a6200, transparent 55%),
+    radial-gradient(ellipse 75% 75% at 72% 22%, #e0aa18, transparent 50%),
+    radial-gradient(ellipse 80% 80% at 18% 78%, #7a4800, transparent 52%),
+    radial-gradient(ellipse 60% 60% at 50% 50%, #5c3600, transparent 55%);
+  filter: blur(72px);
   animation: drift 26s ease-in-out infinite;
 }
 @keyframes drift {
@@ -105,7 +107,7 @@ body > * { position: relative; z-index: 1; }
 }
 .bg-vignette {
   position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgba(0,0,0,0.50) 0%, rgba(0,0,0,0.18) 30%, rgba(0,0,0,0.25) 70%, rgba(0,0,0,0.60) 100%);
+  background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 20%, rgba(0,0,0,0.45) 65%, rgba(0,0,0,0.82) 100%);
 }
 
 /* ── GRADIENT RING FRAMES (v4 signature) ── */
