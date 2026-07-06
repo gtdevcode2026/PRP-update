@@ -92,11 +92,11 @@ body > * { position: relative; z-index: 1; }
 .bg-aurora {
   position: absolute; inset: -25%;
   background:
-    radial-gradient(ellipse 110% 90% at 28% 18%, #c48a08, transparent 55%),
-    radial-gradient(ellipse 90% 110% at 78% 78%, #9a6200, transparent 55%),
-    radial-gradient(ellipse 75% 75% at 72% 22%, #e0aa18, transparent 50%),
-    radial-gradient(ellipse 80% 80% at 18% 78%, #7a4800, transparent 52%),
-    radial-gradient(ellipse 60% 60% at 50% 50%, #5c3600, transparent 55%);
+    radial-gradient(ellipse 110% 90% at 28% 18%, rgba(196,138,8,0.45), transparent 55%),
+    radial-gradient(ellipse 90% 110% at 78% 78%, rgba(154,98,0,0.40), transparent 55%),
+    radial-gradient(ellipse 75% 75% at 72% 22%, rgba(224,170,24,0.45), transparent 50%),
+    radial-gradient(ellipse 80% 80% at 18% 78%, rgba(122,72,0,0.34), transparent 52%),
+    radial-gradient(ellipse 60% 60% at 50% 50%, rgba(92,54,0,0.30), transparent 55%);
   filter: blur(72px);
   animation: drift 26s ease-in-out infinite;
 }
@@ -107,7 +107,7 @@ body > * { position: relative; z-index: 1; }
 }
 .bg-vignette {
   position: absolute; inset: 0;
-  background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 20%, rgba(0,0,0,0.45) 65%, rgba(0,0,0,0.82) 100%);
+  background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 10%, rgba(0,0,0,0.55) 55%, rgba(0,0,0,0.92) 100%);
 }
 
 /* ── GRADIENT RING FRAMES (v4 signature) ── */
@@ -1194,6 +1194,7 @@ async function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
 </script>
 
 </body>
