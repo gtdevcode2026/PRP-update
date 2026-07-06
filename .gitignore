@@ -10,5 +10,6 @@ skills-lock.json
 .DS_Store
 Thumbs.db
 
-# NOTE: pyodide/ is intentionally NOT ignored — it is the offline runtime
-# that the deployed index.html needs. Do not add it here.
+# NOTE: vendor/ and js/ are intentionally NOT ignored — the deployed
+# index.html needs them (vendored libraries + report engine). Do not add
+# them here.

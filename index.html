@@ -991,15 +991,7 @@ function renderResults() {
       '<div class="panel-head"><span class="panel-title">' + esc(sheet.name) + '</span></div>' +
       tableHtml(sheet.headers, sheet.preview, sheet.rows) +
       '</div>';
-    if (sheet.chartImageUrl) {
-      html += '<div class="sheet-stack">' +
-              '<div class="panel glass ring">' +
-              '<div class="panel-head"><span class="panel-title">Chart preview</span></div>' +
-              '<div style="padding:12px 12px 8px"><img class="py-chart-img" src="' + escAttr(sheet.chartImageUrl) + '" alt="Chart"></div>' +
-              '</div>' +
-              tablePanel +
-              '</div>';
-    } else if (sheet.chart) {
+    if (sheet.chart) {
       html += '<div class="sheet-stack">' +
               '<div class="panel glass ring">' +
               '<div class="panel-head"><span class="panel-title">Chart preview</span></div>' +
@@ -1068,9 +1060,9 @@ function renderResults() {
     });
   }
 
-  // Render Plotly charts (fallback for sheets without a rendered image)
+  // Render Plotly charts for browser preview
   d.sheets.forEach(function(sheet, si) {
-    if (sheet.chartImageUrl || !sheet.chart) return;
+    if (!sheet.chart) return;
     const el = document.getElementById('chart-' + si);
     if (!el) return;
     const cfg = sheet.chart.type === 'hbar'

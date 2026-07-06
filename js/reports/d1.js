@@ -73,7 +73,7 @@ window.Reports.d1 = async function d1(wb) {
     paper_bgcolor: '#000000', plot_bgcolor: '#000000',
     title: { text: '<b>(' + tier1Sum + ') Zone wise Tier 1 Suppliers</b>', font: { color: '#ffffff', size: 14 } },
     xaxis: { tickfont: { color: '#ffffff' }, showline: true, linecolor: '#ffffff', mirror: true },
-    yaxis: { tickfont: { color: '#ffffff' }, showline: true, linecolor: '#ffffff', mirror: true, gridcolor: '#333333' },
+    yaxis: { tickfont: { color: '#ffffff' }, showline: true, linecolor: '#ffffff', mirror: true, showgrid: false },
     legend: { bgcolor: '#000000', font: { color: '#ffffff' } },
     margin: { t: 60, r: 20, b: 50, l: 50 },
   };
