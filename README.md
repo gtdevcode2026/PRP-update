@@ -1,24 +1,37 @@
 # PRP Automation Dashboard
 
-AB InBev TPRM & Risk Intelligence dashboard. It runs entirely in the browser —
-no Python, no install, no server required to use it.
+AB InBev TPRM & Risk Intelligence dashboard.
 
-## Quick start — just open it (recommended)
+## Quick start — Python server (recommended, exact Python chart output)
+
+Runs the original Python automation scripts server-side so charts match
+the previous Python/Streamlit output exactly.
+
+**Prerequisites:** Python 3.9+, and install dependencies once:
+
+```bash
+pip install flask pandas matplotlib openpyxl xlsxwriter
+```
+
+**Then run:**
+
+```bash
+python server.py
+```
+
+Open **http://localhost:5000** in Chrome or Edge. Upload your workbook,
+pick a report, click **Run** — the Python script runs, charts are shown
+in the browser, and the Excel file downloads automatically.
+
+## Alternative — browser-only (no server needed)
 
 1. Download this repo: **Code → Download ZIP**, then unzip it.
-2. Keep `index.html` next to the `pyodide/` folder.
+2. Keep `index.html` next to the `vendor/` and `js/` folders.
 3. **Double-click `index.html`.** Upload your Excel workbook, pick a report, click **Run**.
 
-Everything (the Python runtime, pandas, matplotlib, all automation scripts)
-is bundled in the `pyodide/` folder and runs offline in your browser. Recommended
-browsers: Chrome or Edge.
-
-> Sharing it with others via GitHub? See **[DEPLOY.md](DEPLOY.md)** — the `pyodide/`
-> runtime is ~95 MB, so publish with `git push` (GitHub's web upload caps at 25 MB).
-
-> **`index.html` is the only launcher.** There is no server to run — all the
-> automation scripts are embedded in the page and execute in the browser via the
-> bundled Pyodide runtime. Just open `index.html`.
+In this mode the reports run in JavaScript in your browser (SheetJS, ExcelJS,
+Plotly — all vendored locally in `vendor/`). Charts may differ slightly from
+the Python originals. Recommended browsers: Chrome or Edge.
 
 ## Usage
 
