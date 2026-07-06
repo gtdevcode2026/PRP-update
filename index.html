@@ -726,7 +726,6 @@ const S = {
   file: null,
   running: false,
   result: null,
-  serverMode: false,
 };
 
 function currentEntry() {
@@ -867,12 +866,10 @@ function updateRunBtn() {
     hint.textContent = 'Upload a workbook to enable';
     hint.style.display = 'block';
   } else if (S.running) {
-    hint.textContent = S.serverMode ? 'Running Python script…' : 'Generating report…';
+    hint.textContent = 'Generating report…';
     hint.style.display = 'block';
   } else if (!S.result) {
-    hint.textContent = S.serverMode
-      ? 'Python backend ready — click Run to generate'
-      : 'Run to generate the report files';
+    hint.textContent = 'Run to generate the report files';
     hint.style.display = 'block';
   } else {
     hint.style.display = 'none';
@@ -905,107 +902,8 @@ function _runLoadingUi(entryLabel) {
     '</div>';
 }
 
-async function handleRunServer() {
-  const entry = currentEntry();
-  S.running = true;
-  updateRunBtn();
-  _runLoadingUi(entry.label);
-
-  const ra = document.getElementById('results-area');
-  try {
-    const fd = new FormData();
-    fd.append('file', S.file);
-    fd.append('reportId', entry.id);
-
-    const resp = await fetch('/api/run', { method: 'POST', body: fd });
-    const json = await resp.json();
-
-    if (!resp.ok || !json.ok) {
-      throw new Error(json.error || ('HTTP ' + resp.status));
-    }
-
-    // Auto-trigger file download
-    const bytes = b64ToBytes(json.xlsx_b64);
-    const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const dlUrl = URL.createObjectURL(blob);
-    const dlA = document.createElement('a');
-    dlA.href = dlUrl;
-    dlA.download = json.filename;
-    document.body.appendChild(dlA);
-    dlA.click();
-    document.body.removeChild(dlA);
-    setTimeout(function() { URL.revokeObjectURL(dlUrl); }, 60000);
-
-    S.result = { _server: true };
-    renderServerResults(json);
-  } catch (err) {
-    console.error(err);
-    ra.innerHTML = '<div class="alert-error">Error: ' + esc(String(err)) + '</div>';
-  } finally {
-    S.running = false;
-    updateRunBtn();
-  }
-}
-
-function renderServerResults(json) {
-  const ra = document.getElementById('results-area');
-  const ro = document.getElementById('run-outputs');
-
-  if (ro) {
-    let ohtml = '<div class="run-out-top">' +
-                '<span class="run-out-label">Download &middot; 1 file</span>' +
-                '<span class="run-out-ok">&#9679; complete</span>' +
-                '</div>';
-    ohtml += '<div class="dl-grid" id="dl-buttons"></div>';
-    ro.innerHTML = ohtml;
-    ro.classList.add('show');
-
-    const dlWrap = document.getElementById('dl-buttons');
-    if (dlWrap) {
-      const bytes = b64ToBytes(json.xlsx_b64);
-      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.className = 'dl-btn'; a.href = url; a.download = json.filename;
-      a.innerHTML = ICON_DL + '<span>' + esc(json.filename) + '</span>';
-      dlWrap.appendChild(a);
-    }
-  }
-
-  let html = '<div class="results-reveal">';
-  html += '<div class="preview-bar">' +
-          '<span class="preview-title">Chart preview</span>' +
-          '<span class="preview-rule"></span>' +
-          '</div>';
-
-  if (json.charts && json.charts.length > 0) {
-    html += '<div class="py-charts-wrap">';
-    json.charts.forEach(function(b64) {
-      html += '<div class="panel glass ring"><img class="py-chart-img" src="data:image/png;base64,' +
-              b64 + '" alt="Chart from Python"></div>';
-    });
-    html += '</div>';
-  } else {
-    html += '<div class="panel glass ring py-chart-note">' +
-            'Charts are embedded in the downloaded Excel file — open it to view them.</div>';
-  }
-
-  if (json.stdout || json.stderr) {
-    html += '<details class="log-details glass ring">' +
-            '<summary>Script log &nbsp;&middot;&nbsp; stdout / stderr</summary>' +
-            '<div class="log-content">';
-    if (json.stdout) html += '<pre class="log-code">' + esc(json.stdout) + '</pre>';
-    if (json.stderr) html += '<div class="log-label">stderr</div><pre class="log-code">' + esc(json.stderr) + '</pre>';
-    html += '</div></details>';
-  }
-
-  html += '</div>';
-  ra.innerHTML = html;
-}
-
 async function handleRun() {
   if (!S.file || S.running) return;
-  if (S.serverMode) { await handleRunServer(); return; }
 
   const entry = currentEntry();
   S.running = true;
@@ -1093,7 +991,15 @@ function renderResults() {
       '<div class="panel-head"><span class="panel-title">' + esc(sheet.name) + '</span></div>' +
       tableHtml(sheet.headers, sheet.preview, sheet.rows) +
       '</div>';
-    if (sheet.chart) {
+    if (sheet.chartImageUrl) {
+      html += '<div class="sheet-stack">' +
+              '<div class="panel glass ring">' +
+              '<div class="panel-head"><span class="panel-title">Chart preview</span></div>' +
+              '<div style="padding:12px 12px 8px"><img class="py-chart-img" src="' + escAttr(sheet.chartImageUrl) + '" alt="Chart"></div>' +
+              '</div>' +
+              tablePanel +
+              '</div>';
+    } else if (sheet.chart) {
       html += '<div class="sheet-stack">' +
               '<div class="panel glass ring">' +
               '<div class="panel-head"><span class="panel-title">Chart preview</span></div>' +
@@ -1162,9 +1068,9 @@ function renderResults() {
     });
   }
 
-  // Render Plotly charts
+  // Render Plotly charts (fallback for sheets without a rendered image)
   d.sheets.forEach(function(sheet, si) {
-    if (!sheet.chart) return;
+    if (sheet.chartImageUrl || !sheet.chart) return;
     const el = document.getElementById('chart-' + si);
     if (!el) return;
     const cfg = sheet.chart.type === 'hbar'
@@ -1273,22 +1179,6 @@ async function init() {
   renderNav();
   renderVariants();
   renderResults();
-
-  // Detect whether the Python Flask server is running
-  try {
-    const ctrl = new AbortController();
-    const tid = setTimeout(function() { ctrl.abort(); }, 1500);
-    const r = await fetch('/api/health', { signal: ctrl.signal });
-    clearTimeout(tid);
-    if (r.ok) {
-      S.serverMode = true;
-      // Update badge text to reflect Python backend
-      const badge = document.querySelector('.prp-badge-py');
-      if (badge) { badge.textContent = 'Python'; badge.classList.add('ready'); }
-    }
-  } catch (_) {
-    // No server — JS-only fallback mode
-  }
 
   // File input
   document.getElementById('file-input').addEventListener('change', function(e) {
