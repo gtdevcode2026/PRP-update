@@ -732,6 +732,13 @@ window.ReportEngine = (function () {
   'use strict';
   var NAN_STRINGS = { 'nan': 1, 'none': 1, 'nat': 1, '': 1 };
   function readSheet(wb, sheetName) {
+    // Pre-parsed in a Web Worker (big-file path): return the already-extracted
+    // { headers, rows } directly — identical shape to the main-thread branch.
+    if (wb && wb.__prpParsed) {
+      var ps = wb.__prpParsed[sheetName];
+      if (!ps) throw new Error('Sheet not found: ' + sheetName);
+      return { headers: ps.headers, rows: ps.rows };
+    }
     var ws = wb.Sheets[sheetName];
     if (!ws) throw new Error('Sheet not found: ' + sheetName);
     // Read the header row directly (O(cols)) instead of parsing the whole sheet
@@ -1021,6 +1028,82 @@ window.ReportEngine = (function () {
 window.ReportBridge = (function () {
   'use strict';
   var E = window.ReportEngine;
+
+  // ── Off-main-thread parse ────────────────────────────────────────────────
+  // Big Excel files block the UI ("page unresponsive") because XLSX.read +
+  // sheet_to_json run synchronously on the main thread. We push that work into
+  // a Web Worker so the page stays interactive (spinner keeps spinning). The
+  // worker returns { sheetName: {headers, rows} } — the exact shape readSheet
+  // produces — so reports run unchanged. If a Worker can't be created (e.g.
+  // opened via file://, where browsers block workers), we fall back to a
+  // main-thread parse and nothing breaks.
+  var READ_OPTS = { type: 'array', cellHTML: false, cellFormula: false, cellStyles: false, cellNF: false, sheetStubs: false };
+  var XLSX_URLS = [
+    new URL('vendor/xlsx.full.min.js', document.baseURI).href,
+    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+  ];
+  var _worker = null, _workerDead = false, _msgSeq = 0, _pending = {};
+
+  function _buildWorker() {
+    if (_workerDead) return null;
+    if (_worker) return _worker;
+    try {
+      var src =
+        'var XLSX;\n' +
+        'var URLS=' + JSON.stringify(XLSX_URLS) + ';\n' +
+        'function loadX(){for(var i=0;i<URLS.length;i++){try{importScripts(URLS[i]);if(typeof XLSX!=="undefined")return true;}catch(e){}}return false;}\n' +
+        'var READY=loadX();\n' +
+        'onmessage=function(ev){\n' +
+        '  var id=ev.data.id,buf=ev.data.buf;\n' +
+        '  if(!READY||typeof XLSX==="undefined"){postMessage({id:id,err:"xlsx-unavailable-in-worker"});return;}\n' +
+        '  try{\n' +
+        '    var wb=XLSX.read(buf,' + JSON.stringify(READ_OPTS) + ');\n' +
+        '    var out={};\n' +
+        '    wb.SheetNames.forEach(function(name){\n' +
+        '      var ws=wb.Sheets[name];var headers=[];\n' +
+        '      if(ws["!ref"]){var range=XLSX.utils.decode_range(ws["!ref"]);\n' +
+        '        for(var c=range.s.c;c<=range.e.c;c++){var cell=ws[XLSX.utils.encode_cell({r:range.s.r,c:c})];headers.push(cell?cell.v:undefined);}}\n' +
+        '      var rows=XLSX.utils.sheet_to_json(ws,{defval:null,raw:true});\n' +
+        '      out[name]={headers:headers,rows:rows};\n' +
+        '    });\n' +
+        '    postMessage({id:id,sheets:out});\n' +
+        '  }catch(e){postMessage({id:id,err:String((e&&e.message)||e)});}\n' +
+        '};';
+      var url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
+      var w = new Worker(url);
+      w.onmessage = function (ev) {
+        var p = _pending[ev.data.id];
+        if (!p) return;
+        delete _pending[ev.data.id];
+        if (ev.data.err) p.reject(new Error(ev.data.err));
+        else p.resolve(ev.data.sheets);
+      };
+      w.onerror = function () { _workerDead = true; };
+      _worker = w;
+      return w;
+    } catch (e) {
+      _workerDead = true;
+      return null;
+    }
+  }
+
+  function parseInWorker(buf) {
+    return new Promise(function (resolve, reject) {
+      var w = _buildWorker();
+      if (!w) { reject(new Error('no-worker')); return; }
+      var id = ++_msgSeq;
+      var to = setTimeout(function () {
+        if (_pending[id]) { delete _pending[id]; reject(new Error('worker-timeout')); }
+      }, 180000);
+      _pending[id] = {
+        resolve: function (v) { clearTimeout(to); resolve(v); },
+        reject: function (e) { clearTimeout(to); reject(e); }
+      };
+      try { w.postMessage({ id: id, buf: buf }, [buf]); }
+      catch (e) { clearTimeout(to); delete _pending[id]; reject(e); }
+    });
+  }
+
   function arrayBufferToBase64(buf) {
     var bytes = new Uint8Array(buf), chunk = 0x8000, parts = [];
     for (var i = 0; i < bytes.length; i += chunk) parts.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunk)));
@@ -1048,15 +1131,30 @@ window.ReportBridge = (function () {
     return {
       ok: !!result.ok, returncode: result.ok ? 0 : 1, stdout: result.stdout || '', stderr: result.stderr || '',
       files: result.files.map(function (f) { return { name: f.name, data_b64: arrayBufferToBase64(f.bytes), mime: E.mime(f.name) }; }),
-      sheets: sheetsOut, copy_tsv: processed.length ? E.toTsv(processed[0].sheet, 5) : '',
+      sheets: sheetsOut,
+      // Copy Text = the full result data (all output sheets), not a 5-row teaser.
+      // Result sheets are aggregated pivots/summaries, so this stays small.
+      copy_tsv: processed.map(function (p) {
+        var body = E.toTsv(p.sheet);
+        return processed.length > 1 ? (p.name + '\n' + body) : body;
+      }).join('\n'),
     };
   }
   async function runReport(entry, file) {
     var buf = await file.arrayBuffer();
-    // Big-file tuned: skip per-cell HTML rendering, formula strings, styles and
-    // number-format parsing. sheet_to_json only reads .v/.t so output is identical,
-    // but parse time + memory drop sharply on large sheets.
-    var wb = XLSX.read(buf, { type: 'array', cellHTML: false, cellFormula: false, cellStyles: false, cellNF: false, sheetStubs: false });
+    var wb;
+    try {
+      // Parse in a Web Worker → main thread stays responsive on big files.
+      var sheets = await parseInWorker(buf);
+      wb = { __prpParsed: sheets, SheetNames: Object.keys(sheets) };
+    } catch (e) {
+      // No worker (file://) or worker failed → parse on the main thread.
+      // buf was transferred to the worker (detached), so re-read from the File.
+      // Tuned opts skip per-cell HTML/formula/style/number-format work — same
+      // output (sheet_to_json reads .v/.t only), much faster on large sheets.
+      var buf2 = await file.arrayBuffer();
+      wb = XLSX.read(buf2, READ_OPTS);
+    }
     var fn = window.Reports[entry.id];
     if (!fn) throw new Error('No JS report implementation for ' + entry.id);
     var result = await fn(wb);
@@ -1752,22 +1850,32 @@ function renderResults() {
   const copyBtn = document.getElementById('copy-btn');
   if (copyBtn && d.copy_tsv) {
     copyBtn.addEventListener('click', function() {
-      const done = function() {
-        copyBtn.innerHTML = ICON_OK + 'Copied';
-        copyBtn.classList.add('ok');
+      const text = d.copy_tsv;
+      const flash = function(ok) {
+        copyBtn.innerHTML = ok ? (ICON_OK + 'Copied') : (ICON_COPY + 'Copy failed');
+        copyBtn.classList.toggle('ok', ok);
         setTimeout(function() { copyBtn.innerHTML = ICON_COPY + 'Copy text'; copyBtn.classList.remove('ok'); }, 2000);
       };
-      if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(d.copy_tsv).then(done);
+      // execCommand fallback — works on file:// and non-secure origins where
+      // navigator.clipboard rejects. Runs both when the modern API is absent
+      // AND when writeText() rejects (the case that silently failed before).
+      const legacy = function() {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;';
+          document.body.appendChild(ta);
+          ta.focus(); ta.select();
+          try { ta.setSelectionRange(0, text.length); } catch (e) {}
+          const ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          flash(ok);
+        } catch (e) { flash(false); }
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function() { flash(true); }, legacy);
       } else {
-        const ta = document.createElement('textarea');
-        ta.value = d.copy_tsv;
-        ta.style.cssText = 'position:fixed;opacity:0';
-        document.body.appendChild(ta);
-        ta.focus(); ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        done();
+        legacy();
       }
     });
   }
