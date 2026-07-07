@@ -623,7 +623,7 @@ hr, .output-divider { border: none; border-top: 1px solid var(--hairline-2); mar
     <div class="prp-logo">
       <div class="prp-abinbev-logo">
         <img src="logo.png" alt="AB InBev" id="logo-img"
-             onerror="this.style.display='none';document.getElementById('logo-svg').style.display='block';">
+             onerror="this.style.display='none';var s=document.getElementById('logo-svg');if(s)s.style.display='block';">
         <svg id="logo-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 60" height="28" aria-label="AB InBev" style="display:none">
           <g transform="translate(30,30)">
             <path d="M1,-1 C3,-22 20,-24 20,-8 C14,2 4,4 1,-1Z" fill="#F5C518"/>
@@ -917,6 +917,18 @@ async function handleRun() {
   _runLoadingUi(entry.label);
 
   const ra = document.getElementById('results-area');
+
+  if (typeof ReportBridge === 'undefined' || typeof ReportEngine === 'undefined' || typeof XLSX === 'undefined') {
+    ra.innerHTML = '<div class="alert-error">' +
+      '<strong>Required scripts not loaded.</strong><br>' +
+      'Make sure the <code>vendor/</code> and <code>js/</code> folders are present next to <code>index.html</code>. ' +
+      'Download the <strong>full repository</strong>, not just the HTML file.' +
+      '</div>';
+    S.running = false;
+    updateRunBtn();
+    return;
+  }
+
   try {
     const data = await ReportBridge.runReport(entry, S.file);
     S.result = data;
@@ -1196,7 +1208,22 @@ async function init() {
   updateRunBtn();
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', function() {
+  var missing = [];
+  if (typeof Plotly   === 'undefined') missing.push('vendor/plotly.min.js');
+  if (typeof XLSX     === 'undefined') missing.push('vendor/xlsx.full.min.js');
+  if (typeof ExcelJS  === 'undefined') missing.push('vendor/exceljs.min.js');
+  if (typeof ReportEngine === 'undefined') missing.push('js/report-engine.js');
+  if (typeof ReportBridge === 'undefined') missing.push('js/bridge.js');
+  if (missing.length) {
+    var b = document.createElement('div');
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#7b1e1e;color:#fff;padding:14px 20px;font-size:13px;font-family:monospace;line-height:1.6;text-align:center;';
+    b.innerHTML = '<strong>Missing files:</strong> ' + missing.join(', ') + '<br>' +
+      'Clone or download the <strong>full repository</strong> — these folders must sit next to <code>index.html</code>: <code>vendor/</code> &amp; <code>js/</code>';
+    document.body.prepend(b);
+  }
+  init();
+});
 
 </script>
 
