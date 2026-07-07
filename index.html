@@ -731,19 +731,10 @@ window.Reports = window.Reports || {};
 window.ReportEngine = (function () {
   'use strict';
   var NAN_STRINGS = { 'nan': 1, 'none': 1, 'nat': 1, '': 1 };
-  function readSheet(wb, sheetName) {
-    // Pre-parsed in a Web Worker (big-file path): return the already-extracted
-    // { headers, rows } directly — identical shape to the main-thread branch.
-    if (wb && wb.__prpParsed) {
-      var ps = wb.__prpParsed[sheetName];
-      if (!ps) throw new Error('Sheet not found: ' + sheetName);
-      return { headers: ps.headers, rows: ps.rows };
-    }
-    var ws = wb.Sheets[sheetName];
-    if (!ws) throw new Error('Sheet not found: ' + sheetName);
-    // Read the header row directly (O(cols)) instead of parsing the whole sheet
-    // a second time just to grab row 1. Raw .v values — identical to the old
-    // sheet_to_json({header:1})[0], but no full-sheet scan on big files.
+  var LAZY_READ_OPTS = { type: 'array', cellHTML: false, cellFormula: false, cellStyles: false, cellNF: false, sheetStubs: false };
+  // Extract { headers, rows } from a parsed SheetJS worksheet. Headers are read
+  // straight from the first row (O(cols)); rows via sheet_to_json.
+  function extractWorksheet(ws) {
     var headers = [];
     if (ws['!ref']) {
       var range = XLSX.utils.decode_range(ws['!ref']);
@@ -754,6 +745,29 @@ window.ReportEngine = (function () {
     }
     var rows = XLSX.utils.sheet_to_json(ws, { defval: null, raw: true });
     return { headers: headers, rows: rows };
+  }
+  function readSheet(wb, sheetName) {
+    // Pre-parsed asynchronously (very large files): return the cached result.
+    if (wb && wb.__prpParsed) {
+      var ps = wb.__prpParsed[sheetName];
+      if (!ps) throw new Error('Sheet not found: ' + sheetName);
+      return { headers: ps.headers, rows: ps.rows };
+    }
+    // Lazy: parse ONLY this sheet from the raw bytes, on demand, then cache it.
+    // Each report reads a single sheet, so we skip parsing the rest of the
+    // workbook entirely — the big speed win on multi-sheet exports (~2-3x).
+    if (wb && wb.__lazy) {
+      if (wb._cache[sheetName]) return wb._cache[sheetName];
+      var w = XLSX.read(wb.__lazy, Object.assign({ sheets: [sheetName] }, LAZY_READ_OPTS));
+      var lws = w.Sheets[sheetName];
+      if (!lws) throw new Error('Sheet not found: ' + sheetName);
+      var got = extractWorksheet(lws);
+      wb._cache[sheetName] = got;
+      return got;
+    }
+    var ws = wb.Sheets[sheetName];
+    if (!ws) throw new Error('Sheet not found: ' + sheetName);
+    return extractWorksheet(ws);
   }
   function isBlank(v) {
     if (v === null || v === undefined) return true;
@@ -1029,20 +1043,17 @@ window.ReportBridge = (function () {
   'use strict';
   var E = window.ReportEngine;
 
-  // ── Non-blocking parse (keeps the page responsive on big files) ───────────
-  // Opening index.html by double-click uses the file:// origin, where Chrome
-  // and Edge BLOCK Web Workers — so parsing can't be offloaded to a thread.
-  // And SheetJS's XLSX.read is one long synchronous call, which freezes the
-  // page ("Page Unresponsive") on large files.
-  //
-  // So we parse with ExcelJS's async loader, which breaks the work into
-  // event-loop turns (it yields roughly every ~400ms) — the browser never
-  // locks up and the spinner keeps animating. Each worksheet is converted into
-  // the exact { headers, rows } shape SheetJS's readSheet produces; this was
-  // verified cell-for-cell identical on real workbooks (dates included), so
-  // every report runs unchanged. If ExcelJS is unavailable we fall back to the
-  // synchronous SheetJS parse (same data, just not chunked).
-  var READ_OPTS = { type: 'array', cellHTML: false, cellFormula: false, cellStyles: false, cellNF: false, sheetStubs: false };
+  // ── Async parse for very large files only (40MB+) ─────────────────────────
+  // The common path is lazy single-sheet parsing (see readSheet), which is
+  // fast and stays short. But a single enormous sheet parsed synchronously
+  // could still block long enough to freeze the page — and under file://
+  // (double-click) Web Workers are blocked, so we can't offload to a thread.
+  // For those rare huge files we parse with ExcelJS's async loader instead,
+  // which breaks the work into event-loop turns (yields ~every 400ms) so the
+  // page never locks up. Each worksheet is converted into the exact
+  // { headers, rows } shape readSheet produces — verified cell-for-cell
+  // identical on real workbooks (dates included) — so every report runs
+  // unchanged.
 
   // Normalize an ExcelJS cell value to the plain value SheetJS would yield.
   function _exVal(v) {
@@ -1139,15 +1150,20 @@ window.ReportBridge = (function () {
   async function runReport(entry, file) {
     var buf = await file.arrayBuffer();
     var wb;
-    try {
-      // Async chunked parse → the page never freezes, and it works under
-      // file:// (double-click) where Web Workers are blocked.
-      var sheets = await parseWorkbookAsync(buf);
-      wb = { __prpParsed: sheets, SheetNames: Object.keys(sheets) };
-    } catch (e) {
-      // Fallback: synchronous SheetJS parse. Identical data, just not chunked.
-      var buf2 = await file.arrayBuffer();
-      wb = XLSX.read(buf2, READ_OPTS);
+    if (buf.byteLength > 40 * 1024 * 1024) {
+      // Very large workbook (40MB+): a single huge sheet could block long enough
+      // to freeze the page, so parse asynchronously (ExcelJS yields, no freeze).
+      try {
+        var sheets = await parseWorkbookAsync(buf);
+        wb = { __prpParsed: sheets, SheetNames: Object.keys(sheets) };
+      } catch (e) {
+        wb = { __lazy: buf, _cache: {} };
+      }
+    } else {
+      // Common case: parse only the sheet each report actually needs, on demand
+      // (see readSheet). Skipping the rest of the workbook is the main speed
+      // win (~2-3x on multi-sheet exports), and each sheet parse stays short.
+      wb = { __lazy: buf, _cache: {} };
     }
     var fn = window.Reports[entry.id];
     if (!fn) throw new Error('No JS report implementation for ' + entry.id);
