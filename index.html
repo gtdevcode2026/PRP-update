@@ -56,7 +56,7 @@
    Type    : Arial throughout (UI, data, display)
    ============================================================ */
 :root {
-  --bg:        #030304;
+  --bg:        #000000;
   /* brand gold */
   --gold:      #EDC94F;
   --gold-hi:   #F2D465;
@@ -88,7 +88,7 @@
 html { height: 100%; -webkit-text-size-adjust: 100%; }
 body {
   min-height: 100%;
-  background: #040200;
+  background: #000000;
   color: var(--tx-body);
   font-family: var(--font);
   font-size: 13px;
@@ -117,12 +117,9 @@ body > * { position: relative; z-index: 1; }
 .bg-aurora {
   position: absolute; inset: -25%;
   background:
-    radial-gradient(ellipse 110% 90% at 28% 18%, rgba(196,138,8,0.45), transparent 55%),
-    radial-gradient(ellipse 90% 110% at 78% 78%, rgba(154,98,0,0.40), transparent 55%),
-    radial-gradient(ellipse 75% 75% at 72% 22%, rgba(224,170,24,0.45), transparent 50%),
-    radial-gradient(ellipse 80% 80% at 18% 78%, rgba(122,72,0,0.34), transparent 52%),
-    radial-gradient(ellipse 60% 60% at 50% 50%, rgba(92,54,0,0.30), transparent 55%);
-  filter: blur(72px);
+    radial-gradient(ellipse 100% 90% at 26% 16%, rgba(150,104,6,0.10), transparent 58%),
+    radial-gradient(ellipse 85% 100% at 80% 80%, rgba(110,70,0,0.08), transparent 60%);
+  filter: blur(90px);
   animation: drift 26s ease-in-out infinite;
 }
 @keyframes drift {
@@ -637,7 +634,7 @@ hr, .output-divider { border: none; border-top: 1px solid var(--hairline-2); mar
 <body>
 
 <!-- LOADING OVERLAY -->
-<div id="prp-load-overlay" style="position:fixed;inset:0;z-index:99998;background:#0b0b0b;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;font-family:monospace;">
+<div id="prp-load-overlay" style="position:fixed;inset:0;z-index:99998;background:#000000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;font-family:monospace;">
   <svg id="prp-load-spin" width="34" height="34" viewBox="0 0 34 34" fill="none" style="animation:prp-spin 1s linear infinite;"><circle cx="17" cy="17" r="13" stroke="rgba(237,201,79,0.18)" stroke-width="3"/><path d="M17 4a13 13 0 0 1 13 13" stroke="#e0c040" stroke-width="3" stroke-linecap="round"/></svg>
   <div style="color:rgba(255,240,200,0.45);font-size:11px;letter-spacing:0.18em;text-transform:uppercase;">Loading</div>
   <div id="prp-load-err" style="display:none;color:#ff8080;font-size:12px;text-align:center;max-width:420px;padding:0 24px;line-height:1.8;"></div>
@@ -737,7 +734,17 @@ window.ReportEngine = (function () {
   function readSheet(wb, sheetName) {
     var ws = wb.Sheets[sheetName];
     if (!ws) throw new Error('Sheet not found: ' + sheetName);
-    var headers = (XLSX.utils.sheet_to_json(ws, { header: 1, raw: true })[0] || []);
+    // Read the header row directly (O(cols)) instead of parsing the whole sheet
+    // a second time just to grab row 1. Raw .v values — identical to the old
+    // sheet_to_json({header:1})[0], but no full-sheet scan on big files.
+    var headers = [];
+    if (ws['!ref']) {
+      var range = XLSX.utils.decode_range(ws['!ref']);
+      for (var c = range.s.c; c <= range.e.c; c++) {
+        var cell = ws[XLSX.utils.encode_cell({ r: range.s.r, c: c })];
+        headers.push(cell ? cell.v : undefined);
+      }
+    }
     var rows = XLSX.utils.sheet_to_json(ws, { defval: null, raw: true });
     return { headers: headers, rows: rows };
   }
@@ -1046,7 +1053,10 @@ window.ReportBridge = (function () {
   }
   async function runReport(entry, file) {
     var buf = await file.arrayBuffer();
-    var wb = XLSX.read(buf, { type: 'array' });
+    // Big-file tuned: skip per-cell HTML rendering, formula strings, styles and
+    // number-format parsing. sheet_to_json only reads .v/.t so output is identical,
+    // but parse time + memory drop sharply on large sheets.
+    var wb = XLSX.read(buf, { type: 'array', cellHTML: false, cellFormula: false, cellStyles: false, cellNF: false, sheetStubs: false });
     var fn = window.Reports[entry.id];
     if (!fn) throw new Error('No JS report implementation for ' + entry.id);
     var result = await fn(wb);
