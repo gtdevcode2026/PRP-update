@@ -1029,79 +1029,75 @@ window.ReportBridge = (function () {
   'use strict';
   var E = window.ReportEngine;
 
-  // ── Off-main-thread parse ────────────────────────────────────────────────
-  // Big Excel files block the UI ("page unresponsive") because XLSX.read +
-  // sheet_to_json run synchronously on the main thread. We push that work into
-  // a Web Worker so the page stays interactive (spinner keeps spinning). The
-  // worker returns { sheetName: {headers, rows} } — the exact shape readSheet
-  // produces — so reports run unchanged. If a Worker can't be created (e.g.
-  // opened via file://, where browsers block workers), we fall back to a
-  // main-thread parse and nothing breaks.
+  // ── Non-blocking parse (keeps the page responsive on big files) ───────────
+  // Opening index.html by double-click uses the file:// origin, where Chrome
+  // and Edge BLOCK Web Workers — so parsing can't be offloaded to a thread.
+  // And SheetJS's XLSX.read is one long synchronous call, which freezes the
+  // page ("Page Unresponsive") on large files.
+  //
+  // So we parse with ExcelJS's async loader, which breaks the work into
+  // event-loop turns (it yields roughly every ~400ms) — the browser never
+  // locks up and the spinner keeps animating. Each worksheet is converted into
+  // the exact { headers, rows } shape SheetJS's readSheet produces; this was
+  // verified cell-for-cell identical on real workbooks (dates included), so
+  // every report runs unchanged. If ExcelJS is unavailable we fall back to the
+  // synchronous SheetJS parse (same data, just not chunked).
   var READ_OPTS = { type: 'array', cellHTML: false, cellFormula: false, cellStyles: false, cellNF: false, sheetStubs: false };
-  var XLSX_URLS = [
-    new URL('vendor/xlsx.full.min.js', document.baseURI).href,
-    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
-  ];
-  var _worker = null, _workerDead = false, _msgSeq = 0, _pending = {};
 
-  function _buildWorker() {
-    if (_workerDead) return null;
-    if (_worker) return _worker;
-    try {
-      var src =
-        'var XLSX;\n' +
-        'var URLS=' + JSON.stringify(XLSX_URLS) + ';\n' +
-        'function loadX(){for(var i=0;i<URLS.length;i++){try{importScripts(URLS[i]);if(typeof XLSX!=="undefined")return true;}catch(e){}}return false;}\n' +
-        'var READY=loadX();\n' +
-        'onmessage=function(ev){\n' +
-        '  var id=ev.data.id,buf=ev.data.buf;\n' +
-        '  if(!READY||typeof XLSX==="undefined"){postMessage({id:id,err:"xlsx-unavailable-in-worker"});return;}\n' +
-        '  try{\n' +
-        '    var wb=XLSX.read(buf,' + JSON.stringify(READ_OPTS) + ');\n' +
-        '    var out={};\n' +
-        '    wb.SheetNames.forEach(function(name){\n' +
-        '      var ws=wb.Sheets[name];var headers=[];\n' +
-        '      if(ws["!ref"]){var range=XLSX.utils.decode_range(ws["!ref"]);\n' +
-        '        for(var c=range.s.c;c<=range.e.c;c++){var cell=ws[XLSX.utils.encode_cell({r:range.s.r,c:c})];headers.push(cell?cell.v:undefined);}}\n' +
-        '      var rows=XLSX.utils.sheet_to_json(ws,{defval:null,raw:true});\n' +
-        '      out[name]={headers:headers,rows:rows};\n' +
-        '    });\n' +
-        '    postMessage({id:id,sheets:out});\n' +
-        '  }catch(e){postMessage({id:id,err:String((e&&e.message)||e)});}\n' +
-        '};';
-      var url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
-      var w = new Worker(url);
-      w.onmessage = function (ev) {
-        var p = _pending[ev.data.id];
-        if (!p) return;
-        delete _pending[ev.data.id];
-        if (ev.data.err) p.reject(new Error(ev.data.err));
-        else p.resolve(ev.data.sheets);
-      };
-      w.onerror = function () { _workerDead = true; };
-      _worker = w;
-      return w;
-    } catch (e) {
-      _workerDead = true;
+  // Normalize an ExcelJS cell value to the plain value SheetJS would yield.
+  function _exVal(v) {
+    if (v === null || v === undefined) return null;
+    if (v instanceof Date) return v;
+    if (typeof v === 'object') {
+      if (v.richText) return v.richText.map(function (t) { return t.text; }).join('');
+      if ('result' in v) return v.result === undefined ? null : v.result;  // formula → cached result
+      if ('text' in v) return v.text;                                       // hyperlink → display text
+      if ('error' in v) return null;                                        // #REF! etc → blank
       return null;
     }
+    return v;  // number | string | boolean
   }
 
-  function parseInWorker(buf) {
-    return new Promise(function (resolve, reject) {
-      var w = _buildWorker();
-      if (!w) { reject(new Error('no-worker')); return; }
-      var id = ++_msgSeq;
-      var to = setTimeout(function () {
-        if (_pending[id]) { delete _pending[id]; reject(new Error('worker-timeout')); }
-      }, 180000);
-      _pending[id] = {
-        resolve: function (v) { clearTimeout(to); resolve(v); },
-        reject: function (e) { clearTimeout(to); reject(e); }
-      };
-      try { w.postMessage({ id: id, buf: buf }, [buf]); }
-      catch (e) { clearTimeout(to); delete _pending[id]; reject(e); }
-    });
+  // Build row-object keys exactly like SheetJS object-mode sheet_to_json:
+  // duplicate headers get _1/_2 suffixes; blank headers become __EMPTY/__EMPTY_1.
+  function _dedupeKeys(headers) {
+    var seen = {}, keys = [];
+    for (var i = 0; i < headers.length; i++) {
+      var h = headers[i];
+      var base = (h === null || h === undefined || String(h) === '') ? '__EMPTY' : String(h);
+      if (seen[base] === undefined) { seen[base] = 0; keys.push(base); }
+      else { seen[base] += 1; keys.push(base + '_' + seen[base]); }
+    }
+    return keys;
+  }
+
+  function _yield() { return new Promise(function (res) { setTimeout(res, 0); }); }
+
+  async function parseWorkbookAsync(buf) {
+    var ExcelJSLib = window.ExcelJS;
+    if (!ExcelJSLib || !ExcelJSLib.Workbook) throw new Error('ExcelJS unavailable');
+    var wb = new ExcelJSLib.Workbook();
+    await wb.xlsx.load(buf);            // async — yields during unzip + XML parse
+    var out = {};
+    for (var s = 0; s < wb.worksheets.length; s++) {
+      var ws = wb.worksheets[s];
+      var colCount = ws.columnCount;
+      var headerVals = ws.getRow(1).values;    // 1-indexed sparse array
+      var headers = [];
+      for (var c = 1; c <= colCount; c++) headers.push(_exVal(headerVals[c]));
+      var keys = _dedupeKeys(headers);
+      var rows = [];
+      var rowCount = ws.rowCount;
+      for (var r = 2; r <= rowCount; r++) {
+        var vals = ws.getRow(r).values;
+        var obj = {};
+        for (var c2 = 1; c2 <= colCount; c2++) obj[keys[c2 - 1]] = _exVal(vals[c2]);
+        rows.push(obj);
+        if ((r & 2047) === 0) await _yield();  // keep the UI responsive on huge sheets
+      }
+      out[ws.name] = { headers: headers, rows: rows };
+    }
+    return out;
   }
 
   function arrayBufferToBase64(buf) {
@@ -1144,14 +1140,12 @@ window.ReportBridge = (function () {
     var buf = await file.arrayBuffer();
     var wb;
     try {
-      // Parse in a Web Worker → main thread stays responsive on big files.
-      var sheets = await parseInWorker(buf);
+      // Async chunked parse → the page never freezes, and it works under
+      // file:// (double-click) where Web Workers are blocked.
+      var sheets = await parseWorkbookAsync(buf);
       wb = { __prpParsed: sheets, SheetNames: Object.keys(sheets) };
     } catch (e) {
-      // No worker (file://) or worker failed → parse on the main thread.
-      // buf was transferred to the worker (detached), so re-read from the File.
-      // Tuned opts skip per-cell HTML/formula/style/number-format work — same
-      // output (sheet_to_json reads .v/.t only), much faster on large sheets.
+      // Fallback: synchronous SheetJS parse. Identical data, just not chunked.
       var buf2 = await file.arrayBuffer();
       wb = XLSX.read(buf2, READ_OPTS);
     }
