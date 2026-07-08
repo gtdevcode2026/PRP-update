@@ -1856,36 +1856,72 @@ function renderResults() {
     dlWrap.appendChild(a);
   });
 
-  // Copy button
+  // Copy button — copies a real table, exactly like drag-selecting the cells
+  // in Excel and pressing Ctrl+C. We put BOTH representations on the clipboard:
+  //   • text/html  → an actual <table>, so Excel / Google Sheets / Word / email
+  //                   paste it as proper rows and columns of cells.
+  //   • text/plain → tab-separated (TSV), so plain editors still get columns.
+  // The old version wrote plain text only, which pastes as one run of tabs
+  // (no cells) in rich targets — that's the "not coming off properly" bug.
   const copyBtn = document.getElementById('copy-btn');
   if (copyBtn && d.copy_tsv) {
     copyBtn.addEventListener('click', function() {
-      const text = d.copy_tsv;
+      const tsv = d.copy_tsv;
       const flash = function(ok) {
         copyBtn.innerHTML = ok ? (ICON_OK + 'Copied') : (ICON_COPY + 'Copy failed');
         copyBtn.classList.toggle('ok', ok);
         setTimeout(function() { copyBtn.innerHTML = ICON_COPY + 'Copy text'; copyBtn.classList.remove('ok'); }, 2000);
       };
-      // execCommand fallback — works on file:// and non-secure origins where
-      // navigator.clipboard rejects. Runs both when the modern API is absent
-      // AND when writeText() rejects (the case that silently failed before).
-      const legacy = function() {
-        try {
-          const ta = document.createElement('textarea');
-          ta.value = text;
-          ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;';
-          document.body.appendChild(ta);
-          ta.focus(); ta.select();
-          try { ta.setSelectionRange(0, text.length); } catch (e) {}
-          const ok = document.execCommand('copy');
-          document.body.removeChild(ta);
-          flash(ok);
-        } catch (e) { flash(false); }
+      // Rebuild the TSV as an HTML <table> (rows = lines, cells = tab-split).
+      const buildHtmlTable = function(text) {
+        const lines = text.replace(/\n+$/, '').split('\n');
+        let html = '<table border="1" cellspacing="0">';
+        lines.forEach(function(line, r) {
+          const cells = line.split('\t');
+          const tag = r === 0 ? 'th' : 'td';
+          html += '<tr>';
+          cells.forEach(function(c) { html += '<' + tag + '>' + esc(c) + '</' + tag + '>'; });
+          html += '</tr>';
+        });
+        return html + '</table>';
       };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(function() { flash(true); }, legacy);
+      // Fallback: select a real DOM table and let the browser copy it. This is
+      // the exact same mechanism as Ctrl+C on selected spreadsheet cells — the
+      // browser derives BOTH text/html and text/plain from the selection. Works
+      // on file:// and other origins where navigator.clipboard is unavailable.
+      const copyViaSelection = function() {
+        try {
+          const holder = document.createElement('div');
+          holder.setAttribute('contenteditable', 'true');
+          holder.style.cssText = 'position:fixed;left:-99999px;top:0;';
+          holder.innerHTML = buildHtmlTable(tsv);
+          document.body.appendChild(holder);
+          const sel = window.getSelection();
+          const saved = [];
+          for (let i = 0; i < sel.rangeCount; i++) saved.push(sel.getRangeAt(i));
+          const range = document.createRange();
+          range.selectNodeContents(holder);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          const ok = document.execCommand('copy');
+          sel.removeAllRanges();
+          saved.forEach(function(r) { sel.addRange(r); });
+          document.body.removeChild(holder);
+          return ok;
+        } catch (e) { return false; }
+      };
+      // Modern secure-origin path: write both formats explicitly.
+      if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+        const item = new ClipboardItem({
+          'text/html': new Blob([buildHtmlTable(tsv)], { type: 'text/html' }),
+          'text/plain': new Blob([tsv], { type: 'text/plain' }),
+        });
+        navigator.clipboard.write([item]).then(
+          function() { flash(true); },
+          function() { flash(copyViaSelection()); }
+        );
       } else {
-        legacy();
+        flash(copyViaSelection());
       }
     });
   }
