@@ -20,6 +20,7 @@
     { local: 'vendor/plotly.min.js',    cdn: 'https://cdn.plot.ly/plotly-2.35.2.min.js' },
     { local: 'vendor/xlsx.full.min.js', cdn: 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js' },
     { local: 'vendor/exceljs.min.js',   cdn: 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js' },
+    { local: 'vendor/fflate.min.js',    cdn: 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js' },
   ];
   var _domReady = false, _vendorsOk = false, _vendorErr = null;
   var _onReady = null, _onError = null;
@@ -44,6 +45,15 @@
     return loadScript(item.local).catch(function () { return loadScript(item.cdn); }).then(function () { return loadVendors(rest); });
   }
   loadVendors(VENDORS).then(function () { _vendorsOk = true; _check(); }).catch(function (err) { _vendorErr = err; _check(); });
+  /* Optional vendors — animation only. Never sets _vendorErr: the app must
+     boot and stay fully usable if these are missing or offline. */
+  var VENDORS_OPTIONAL = [
+    { local: 'vendor/gsap.min.js',          cdn: 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js' },
+    { local: 'vendor/ScrollTrigger.min.js', cdn: 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js' },
+  ];
+  loadVendors(VENDORS_OPTIONAL)
+    .then(function () { if (window.tryInitHeroAnimations) window.tryInitHeroAnimations(); })
+    .catch(function () { /* non-fatal: page works without animations */ });
 })();
 </script>
 <style>
@@ -56,7 +66,7 @@
    Type    : Arial throughout (UI, data, display)
    ============================================================ */
 :root {
-  --bg:        #000000;
+  --bg:        #0d0e11;
   /* brand gold */
   --gold:      #EDC94F;
   --gold-hi:   #F2D465;
@@ -74,11 +84,18 @@
   --green:      #6FBF5A;
   --green-soft: #8EC877;
   --red:        #E06A6A;
-  /* surfaces + hairlines */
-  --glass:    rgba(255,255,255,0.012);
-  --glass-2:  rgba(255,255,255,0.04);
-  --hairline: rgba(255,255,255,0.07);
-  --hairline-2: rgba(255,255,255,0.045);
+  /* corporate solid surfaces (flat, no glass) */
+  --surface:   #15171b;
+  --surface-2: #1b1e24;
+  --glass:    #15171b;
+  --glass-2:  #1b1e24;
+  --hairline: rgba(255,255,255,0.10);
+  --hairline-2: rgba(255,255,255,0.06);
+  --border-strong: rgba(255,255,255,0.16);
+  /* corporate radius scale */
+  --r-panel:   12px;
+  --r-control: 8px;
+  --r-chip:    6px;
   /* type */
   --font:  Arial, 'Helvetica Neue', Helvetica, sans-serif;
   --mono:  Arial, 'Helvetica Neue', Helvetica, sans-serif;
@@ -88,7 +105,7 @@
 html { height: 100%; -webkit-text-size-adjust: 100%; }
 body {
   min-height: 100%;
-  background: #000000;
+  background: var(--bg);
   color: var(--tx-body);
   font-family: var(--font);
   font-size: 13px;
@@ -112,77 +129,37 @@ body > * { position: relative; z-index: 1; }
   }
 }
 
-/* ── AMBIENT GOLD AURORA ── */
-.bg-fx { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
-.bg-aurora {
-  position: absolute; inset: -25%;
-  background:
-    radial-gradient(ellipse 100% 90% at 26% 16%, rgba(150,104,6,0.10), transparent 58%),
-    radial-gradient(ellipse 85% 100% at 80% 80%, rgba(110,70,0,0.08), transparent 60%);
-  filter: blur(90px);
-  animation: drift 26s ease-in-out infinite;
-}
-@keyframes drift {
-  0%   { transform: translate3d(-4%,-3%,0) scale(1.05); }
-  50%  { transform: translate3d(3%,4%,0)  scale(1.12); }
-  100% { transform: translate3d(-4%,-3%,0) scale(1.05); }
-}
-.bg-vignette {
-  position: absolute; inset: 0;
-  background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 10%, rgba(0,0,0,0.55) 55%, rgba(0,0,0,0.92) 100%);
-}
-
-/* ── GRADIENT RING FRAMES (v4 signature) ── */
+/* ── HAIRLINE FRAMES (flat corporate borders, no gradient/glass) ── */
 .ring { position: relative; }
 .ring::before {
-  content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1.4px;
-  background: linear-gradient(180deg,
-    rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.13) 20%,
-    rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%,
-    rgba(255,255,255,0.11) 80%, rgba(255,255,255,0.32) 100%);
+  content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px;
+  background: var(--hairline);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
           mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
           mask-composite: exclude;
   pointer-events: none; z-index: 3;
 }
-.ring-cap::before {
-  background: linear-gradient(180deg,
-    rgba(237,201,79,0.5) 0%, rgba(255,255,255,0.15) 20%,
-    rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%,
-    rgba(255,255,255,0.12) 80%, rgba(237,201,79,0.45) 100%);
-}
-.ring-sb::before {
-  background: linear-gradient(180deg,
-    rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.12) 20%,
-    rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%,
-    rgba(255,255,255,0.1) 80%, rgba(237,201,79,0.35) 100%);
-}
-.ring-gold::before {
-  background: linear-gradient(180deg,
-    rgba(237,201,79,0.55) 0%, rgba(237,201,79,0.18) 20%,
-    rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%,
-    rgba(237,201,79,0.15) 80%, rgba(237,201,79,0.5) 100%);
-}
+.ring-cap::before { background: var(--border-strong); }
+.ring-sb::before  { background: var(--hairline); }
+.ring-gold::before { background: rgba(237,201,79,0.30); }
 .glass {
   background: var(--glass);
-  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
-  box-shadow: inset 0 1px 1px rgba(255,255,255,0.1);
+  box-shadow: none;
 }
 
-/* ── NAVBAR (floating capsule) ── */
+/* ── NAVBAR (solid corporate bar) ── */
 .prp-header {
   position: sticky; top: 0; z-index: 100;
-  padding: 18px clamp(16px, 3vw, 28px) 10px;
-  background: linear-gradient(180deg, rgba(3,3,4,0.92) 45%, rgba(3,3,4,0));
+  padding: 14px clamp(16px, 3vw, 28px) 10px;
+  background: var(--bg);
+  border-bottom: 1px solid transparent;
 }
 .prp-capsule {
-  border-radius: 999px; overflow: hidden;
-  background: rgba(12,10,6,0.5);
-  -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%);
-  box-shadow: inset 0 1px 1px rgba(255,255,255,0.1), 0 18px 50px -30px rgba(0,0,0,0.9);
+  border-radius: var(--r-panel); overflow: hidden;
+  background: var(--surface);
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  padding: 11px 26px;
+  padding: 11px 20px;
 }
 .prp-logo { display: flex; align-items: center; gap: 22px; min-width: 0; }
 .prp-abinbev-logo { height: 28px; display: flex; align-items: center; flex-shrink: 0; }
@@ -201,7 +178,7 @@ body > * { position: relative; z-index: 1; }
 /* ── BRAND BUTTON (hamburger toggle for the report drawer) ── */
 .prp-brand-btn {
   all: unset; display: flex; align-items: center; gap: 14px; min-width: 0;
-  cursor: pointer; padding: 5px 14px 5px 6px; border-radius: 999px;
+  cursor: pointer; padding: 5px 12px 5px 6px; border-radius: var(--r-control);
   transition: background .25s ease;
 }
 .prp-brand-btn:hover { background: rgba(255,255,255,0.05); }
@@ -223,22 +200,20 @@ body > * { position: relative; z-index: 1; }
 .prp-header-right { display: flex; align-items: center; gap: 9px; flex: none; }
 .prp-badge {
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 7px 15px; border-radius: 999px;
-  background: rgba(255,255,255,0.04);
-  -webkit-backdrop-filter: blur(16px) saturate(180%); backdrop-filter: blur(16px) saturate(180%);
+  padding: 6px 12px; border-radius: var(--r-chip);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-2);
   font-size: 12px; font-weight: 450; color: var(--tx-body);
   white-space: nowrap; font-variant-numeric: tabular-nums;
 }
 .prp-badge strong { color: var(--gold); font-weight: 650; }
 .prp-badge-py { color: var(--tx-mute); }
 .prp-badge-py::before {
-  content: ''; width: 7px; height: 7px; border-radius: 999px;
+  content: ''; width: 6px; height: 6px; border-radius: 999px;
   background: rgba(255,255,255,0.25); flex: none;
-  transition: background .3s, box-shadow .3s;
 }
 .prp-badge-py.ready { color: #B8D8A2; }
-.prp-badge-py.ready::before { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulseDot 2.4s ease-in-out infinite; }
-@keyframes pulseDot { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.prp-badge-py.ready::before { background: var(--green); }
 @media (max-width: 720px) { .prp-badge-hide { display: none; } }
 @media (max-width: 460px) { .prp-brand-sub, .prp-logo-sep { display: none; } }
 
@@ -246,6 +221,119 @@ body > * { position: relative; z-index: 1; }
    lives in the hamburger drawer below the header) ── */
 .shell {
   padding: 6px clamp(16px, 3vw, 28px) 52px;
+}
+
+/* ── HERO (Step 1 · Create PRP) ──
+   Full-viewport opening section on pure black. All initial states are fully
+   visible — GSAP .from() tweens own the entrances, so the hero renders
+   complete even if the animation vendor never loads. */
+.hero {
+  position: relative;
+  min-height: calc(100vh - 96px);
+  min-height: calc(100svh - 96px);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 28px clamp(16px, 3vw, 28px) 92px;
+}
+.hero-inner {
+  width: 100%; max-width: 860px;
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+}
+.hero-eyebrow {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+  color: var(--tx-mute); text-transform: uppercase;
+}
+.hero-title {
+  margin-top: 16px;
+  font-size: clamp(30px, 4.4vw, 46px); font-weight: 650; color: var(--tx-hi);
+  line-height: 1.08; letter-spacing: -0.025em; text-wrap: balance;
+}
+.hero-sub {
+  margin-top: 15px; max-width: 560px; font-size: 14.5px;
+  color: var(--tx-mute); line-height: 1.65; text-wrap: pretty;
+}
+
+/* Builder card — single flat corporate panel */
+.prp-builder {
+  width: 100%; max-width: 720px; margin-top: 30px; text-align: left;
+  border-radius: var(--r-panel);
+  background: var(--surface);
+}
+.prp-builder-core {
+  border-radius: inherit; padding: 20px 22px 22px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.prp-builder .prp-dropzone { min-height: 84px; }
+.prp-slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.prp-slot {
+  position: relative;
+  border-radius: var(--r-control); padding: 11px 13px; cursor: pointer;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-2);
+  display: flex; flex-direction: column; gap: 5px; min-width: 0;
+  transition: background .2s ease, border-color .2s ease;
+}
+.prp-slot:hover { background: #202329; border-color: var(--hairline); }
+.prp-slot input[type="file"] { display: none; }
+.prp-slot-kind {
+  display: flex; align-items: center; gap: 7px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.14em;
+  color: var(--tx-mute); text-transform: uppercase;
+}
+.prp-slot-dot {
+  width: 7px; height: 7px; border-radius: 999px; flex: none;
+  background: rgba(255,255,255,0.22);
+  transition: background .2s;
+}
+.prp-slot-file {
+  font-size: 12.5px; color: var(--tx-mute);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.prp-slot.filled { background: rgba(111,191,90,0.10); border-color: rgba(111,191,90,0.28); }
+.prp-slot.filled .prp-slot-dot { background: var(--green); }
+.prp-slot.filled .prp-slot-file { color: var(--tx-hi); }
+.prp-unassigned[hidden] { display: none; }
+.prp-unassigned {
+  display: flex; flex-direction: column; gap: 8px;
+  border-radius: var(--r-control); padding: 11px 13px;
+  background: rgba(224,106,106,0.09);
+  border: 1px solid rgba(224,106,106,0.22);
+}
+.prp-unassigned-hint { font-size: 11px; color: var(--tx-faint); }
+.prp-unassigned-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.prp-unassigned-name {
+  flex: 1 1 160px; min-width: 0; font-size: 12.5px; color: var(--tx-hi);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.prp-assign-btn {
+  all: unset; cursor: pointer;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: rgba(237,201,79,0.85); padding: 5px 11px; border-radius: var(--r-chip);
+  border: 1px solid rgba(237,201,79,0.35);
+  transition: background .2s ease, color .2s ease;
+}
+.prp-assign-btn:hover { background: rgba(237,201,79,0.12); color: var(--gold-hi); }
+.prp-assign-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.prp-status {
+  font-family: var(--mono); font-size: 11px; color: var(--tx-mute);
+  text-align: center; min-height: 17px;
+}
+.prp-status.err { color: var(--red); }
+.prp-status.ok { color: var(--green-soft); }
+.hero-cue {
+  all: unset; cursor: pointer;
+  position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.3em; text-transform: uppercase;
+  color: var(--tx-faint); padding: 8px 14px; border-radius: 999px;
+  transition: color .3s ease;
+}
+.hero-cue:hover { color: var(--gold); }
+.hero-cue:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.hero-cue-chevron { display: block; line-height: 0; }
+.hero-cue-chevron svg { display: block; }
+@media (max-width: 720px) {
+  .prp-slots { grid-template-columns: 1fr; }
+  .hero { min-height: 0; padding-bottom: 70px; }
 }
 
 /* ── NAV DRAWER (hamburger dropdown, full header width) ── */
@@ -261,34 +349,32 @@ body > * { position: relative; z-index: 1; }
 }
 .nav-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px;
-  border-radius: 24px; padding: 14px;
-  background: rgba(12,10,6,0.6);
-  -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%);
-  box-shadow: inset 0 1px 1px rgba(255,255,255,0.1), 0 18px 50px -30px rgba(0,0,0,0.9);
+  border-radius: var(--r-panel); padding: 12px;
+  background: var(--surface);
+  box-shadow: 0 12px 40px -24px rgba(0,0,0,0.7);
 }
 .nav-item {
   display: flex; align-items: center; gap: 13px;
-  padding: 11px 14px; border-radius: 14px; cursor: pointer;
+  padding: 11px 13px; border-radius: var(--r-control); cursor: pointer;
   color: var(--tx-mute);
-  transition: background .25s ease, color .25s ease;
+  transition: background .2s ease, color .2s ease;
 }
 .nav-item:hover:not(.active) { background: rgba(255,255,255,0.05); color: var(--tx-hi); }
 .nav-item.active {
   color: var(--tx-hi);
-  background: linear-gradient(90deg, rgba(237,201,79,0.18), rgba(237,201,79,0.04));
-  box-shadow: inset 0 1px 1px rgba(255,255,255,0.12), 0 0 24px rgba(237,201,79,0.10);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
 }
 .nav-num {
-  width: 26px; height: 26px; border-radius: 999px; flex: none;
-  border: 1px solid rgba(237,201,79,0.35); color: rgba(237,201,79,0.8);
+  width: 26px; height: 26px; border-radius: var(--r-chip); flex: none;
+  border: 1px solid var(--hairline); color: var(--tx-mute);
   font-family: var(--mono); font-size: 11px;
   display: grid; place-items: center;
-  transition: background .25s, color .25s, border-color .25s, box-shadow .25s;
+  transition: background .2s, color .2s, border-color .2s;
 }
 .nav-item.active .nav-num {
-  background: linear-gradient(180deg, var(--gold-hi), var(--gold-mid));
+  background: var(--gold);
   border-color: transparent; color: var(--gold-ink); font-weight: 700;
-  box-shadow: 0 2px 10px rgba(237,201,79,0.4);
 }
 .nav-text {
   font-size: 13.5px; line-height: 1.3; min-width: 0;
@@ -296,7 +382,7 @@ body > * { position: relative; z-index: 1; }
 .nav-item.active .nav-text { font-weight: 600; }
 .nav-glow {
   margin-left: auto; width: 6px; height: 6px; border-radius: 999px; flex: none;
-  background: var(--gold); box-shadow: 0 0 8px var(--gold); display: none;
+  background: var(--gold); display: none;
 }
 .nav-item.active .nav-glow { display: block; }
 @media (max-width: 640px) { .nav-grid { grid-template-columns: 1fr; } }
@@ -307,53 +393,40 @@ body > * { position: relative; z-index: 1; }
   gap: 16px; align-items: stretch; margin-bottom: 18px;
 }
 .pipe-card {
-  border-radius: 20px; padding: 16px 20px;
-  display: flex; flex-direction: column; gap: 11px; min-width: 0;
+  border-radius: var(--r-panel); padding: 18px 20px;
+  display: flex; flex-direction: column; gap: 12px; min-width: 0;
 }
 .pipe-run {
-  background: rgba(237,201,79,0.03);
-  box-shadow: inset 0 1px 1px rgba(255,255,255,0.12), 0 0 40px rgba(237,201,79,0.06);
+  background: var(--surface);
 }
-.pipe-head { display: flex; align-items: center; gap: 10px; }
-.pipe-num {
-  width: 22px; height: 22px; border-radius: 999px; flex: none;
-  background: rgba(237,201,79,0.12); border: 1px solid rgba(237,201,79,0.4);
-  color: var(--gold); font-family: var(--mono); font-size: 11px;
-  display: grid; place-items: center;
-}
+.pipe-head { display: flex; align-items: center; gap: 10px; padding-bottom: 2px; }
 .pipe-label {
-  font-family: var(--mono); font-size: 10px; letter-spacing: 0.26em;
-  color: var(--cream-dim); text-transform: uppercase;
+  font-size: 13px; font-weight: 600; letter-spacing: -0.01em;
+  color: var(--tx-hi);
 }
 
 /* ── UPLOAD ZONE ── */
 .upload-zone {
-  position: relative; border: 1.5px dashed rgba(237,201,79,0.4); border-radius: 14px;
+  position: relative; border: 1px dashed var(--border-strong); border-radius: var(--r-control);
   padding: 12px; text-align: center; cursor: pointer;
-  background: rgba(237,201,79,0.03);
-  transition: border-color .3s, background .3s, box-shadow .3s;
+  background: var(--surface-2);
+  transition: border-color .2s, background .2s;
   flex: 1; display: flex; align-items: center; justify-content: center; min-height: 52px;
 }
 .upload-zone:hover, .upload-zone.drag-over {
-  border-color: rgba(237,201,79,0.7); background: rgba(237,201,79,0.08);
+  border-color: rgba(237,201,79,0.6); background: #202329;
 }
-.upload-zone.drag-over { border-style: solid; box-shadow: inset 0 0 30px rgba(237,201,79,0.07); }
+.upload-zone.drag-over { border-style: solid; }
 .upload-zone input[type="file"] {
   position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
 }
-.upload-hint { font-size: 12px; color: var(--tx-faint); pointer-events: none; line-height: 1.5; }
+.upload-hint { font-size: 12px; color: var(--tx-mute); pointer-events: none; line-height: 1.5; }
 .upload-hint b { color: var(--tx-hi); font-weight: 500; font-size: 13.5px; margin-right: 4px; }
 .file-ready {
-  position: relative; overflow: hidden;
-  display: flex; align-items: center; gap: 11px; padding: 11px 14px;
-  background: rgba(111,191,90,0.08); border-radius: 12px;
-  box-shadow: inset 0 1px 1px rgba(255,255,255,0.08);
-  animation: slideInLeft .4s cubic-bezier(.32,.72,0,1) both;
-}
-.file-ready::after {
-  content: ''; position: absolute; top: 0; bottom: 0; width: 60%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
-  animation: scanLine 1.1s cubic-bezier(.4,0,.6,1) .4s 1 both; pointer-events: none;
+  position: relative;
+  display: flex; align-items: center; gap: 11px; padding: 11px 13px;
+  background: rgba(111,191,90,0.10); border: 1px solid rgba(111,191,90,0.22);
+  border-radius: var(--r-control);
 }
 .file-ok { color: var(--green); font-size: 14px; flex: none; }
 .file-name {
@@ -368,92 +441,83 @@ body > * { position: relative; z-index: 1; }
 /* ── VARIANT ── */
 .variant-radio {
   display: flex; align-items: flex-start; gap: 13px;
-  padding: 11px 15px; border-radius: 14px; cursor: pointer; margin-bottom: 8px;
-  background: rgba(255,255,255,0.03);
-  box-shadow: inset 0 1px 1px rgba(255,255,255,0.06);
-  transition: background .25s, box-shadow .25s;
+  padding: 12px 14px; border-radius: var(--r-control); cursor: pointer; margin-bottom: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-2);
+  transition: background .2s, border-color .2s;
 }
-.variant-radio:hover:not(.active) { background: rgba(237,201,79,0.04); }
+.variant-radio:hover:not(.active) { background: #202329; }
 .variant-radio.active {
-  background: rgba(237,201,79,0.07);
-  box-shadow: inset 0 1px 1px rgba(255,255,255,0.1), 0 0 24px rgba(237,201,79,0.06);
+  background: rgba(237,201,79,0.08);
+  border-color: rgba(237,201,79,0.4);
 }
 .radio-dot {
   width: 17px; height: 17px; border-radius: 999px; flex: none; margin-top: 3px;
-  border: 2px solid rgba(237,201,79,0.45);
-  display: grid; place-items: center; transition: border-color .25s;
+  border: 2px solid var(--border-strong);
+  display: grid; place-items: center; transition: border-color .2s;
 }
 .variant-radio.active .radio-dot { border-color: var(--gold); }
 .variant-radio.active .radio-dot::after {
   content: ''; width: 7px; height: 7px; border-radius: 999px;
-  background: var(--gold); box-shadow: 0 0 6px var(--gold);
+  background: var(--gold);
 }
 .variant-body { min-width: 0; }
-.variant-title { font-family: var(--serif); font-size: 17px; font-weight: 400; color: var(--tx-hi); line-height: 1.3; letter-spacing: 0; }
+.variant-title { font-family: var(--font); font-size: 15px; font-weight: 600; color: var(--tx-hi); line-height: 1.3; letter-spacing: -0.01em; }
 .variant-notes { font-size: 12.5px; color: var(--tx-mute); line-height: 1.55; margin-top: 4px; }
 .gold-file { color: rgba(237,201,79,0.85); }
 
 /* ── RUN BUTTON ── */
 .run-btn {
-  position: relative; overflow: hidden; width: 100%;
-  background: linear-gradient(180deg, var(--gold-hi), var(--gold-mid));
-  color: var(--gold-ink); border: none; border-radius: 999px;
-  font-family: var(--font); font-size: 14.5px; font-weight: 650; letter-spacing: 0;
-  padding: 10px 0; text-align: center; cursor: pointer;
-  box-shadow: 0 4px 24px rgba(237,201,79,0.35), inset 0 1px 1px rgba(255,255,255,0.5);
-  transition: box-shadow .3s, transform .2s cubic-bezier(.32,.72,0,1), filter .2s;
+  position: relative; width: 100%;
+  background: var(--gold);
+  color: var(--gold-ink); border: none; border-radius: var(--r-control);
+  font-family: var(--font); font-size: 14px; font-weight: 650; letter-spacing: -0.01em;
+  padding: 11px 0; text-align: center; cursor: pointer;
+  transition: background .18s ease, transform .12s ease;
 }
-.run-btn::after {
-  content: ''; position: absolute; top: 0; left: -120%; width: 55%; height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); transform: skewX(-20deg);
-}
-.run-btn:hover:not(:disabled) { box-shadow: 0 6px 32px rgba(237,201,79,0.5), inset 0 1px 1px rgba(255,255,255,0.5); filter: brightness(1.03); }
-.run-btn:hover:not(:disabled)::after { animation: sheen .9s cubic-bezier(.4,0,.2,1); }
+.run-btn:hover:not(:disabled) { background: var(--gold-hi); }
 .run-btn:active:not(:disabled) { transform: translateY(1px); }
 .run-btn:disabled {
-  background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.35);
-  box-shadow: inset 0 1px 1px rgba(255,255,255,0.06); cursor: not-allowed;
+  background: var(--surface-2); color: rgba(255,255,255,0.35);
+  border: 1px solid var(--hairline-2); cursor: not-allowed;
 }
-.run-btn:disabled::after { display: none; }
-@keyframes sheen { to { left: 130%; } }
-.run-hint { font-size: 12px; color: var(--tx-faint); text-align: center; padding: 4px 0; }
+.run-hint { font-size: 12px; color: var(--tx-mute); text-align: center; padding: 4px 0; }
 
 /* ── RUN OUTPUTS ── */
 .run-outputs { display: none; }
 .run-outputs.show { display: flex; flex-direction: column; gap: 9px; animation: fadeUp .4s cubic-bezier(.32,.72,0,1) both; }
 .run-out-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .run-out-label {
-  font-family: var(--mono); font-size: 10px; letter-spacing: 0.22em;
-  color: var(--cream-dim); text-transform: uppercase;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em;
+  color: var(--tx-mute); text-transform: uppercase;
 }
 .run-out-ok { font-size: 11.5px; color: var(--green-soft); white-space: nowrap; }
 .dl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
 .dl-btn {
   display: flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 9px 12px; border-radius: 999px; min-width: 0;
-  background: rgba(255,255,255,0.03);
-  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
-  box-shadow: inset 0 1px 1px rgba(255,255,255,0.08);
+  padding: 10px 12px; border-radius: var(--r-control); min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
   color: var(--tx-hi); font-size: 12.5px; font-weight: 500;
   text-decoration: none; cursor: pointer;
-  transition: background .3s, box-shadow .3s;
+  transition: background .2s, border-color .2s;
 }
-.dl-btn:hover { background: rgba(237,201,79,0.08); }
+.dl-btn:hover { background: #202329; border-color: var(--border-strong); }
 .dl-btn svg { color: var(--gold); }
 .dl-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run-out-foot { display: flex; align-items: center; justify-content: center; gap: 12px; }
 .copy-link {
   all: unset;
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
-  padding: 9px 16px; border-radius: 999px; min-width: 0;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.09);
+  padding: 10px 16px; border-radius: var(--r-control); min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
   font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--tx-mute);
-  transition: background .3s, box-shadow .3s, color .3s;
+  transition: background .2s, border-color .2s, color .2s;
 }
 .copy-link svg { color: var(--gold); flex: none; }
-.copy-link:hover { background: rgba(237,201,79,0.08); color: var(--tx-hi); }
+.copy-link:hover { background: #202329; color: var(--tx-hi); border-color: var(--border-strong); }
 .copy-link:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .copy-link.ok { color: var(--green-soft); }
 .dotsep { width: 3px; height: 3px; border-radius: 999px; background: rgba(255,240,200,0.3); flex: none; }
@@ -466,8 +530,8 @@ body > * { position: relative; z-index: 1; }
 
 /* ── PREVIEW HEADER ── */
 .preview-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px 0; margin-bottom: 16px; }
-.preview-title { font-family: var(--serif); font-style: italic; font-size: 22px; color: var(--tx-hi); letter-spacing: 0; flex: none; }
-.preview-rule { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(237,201,79,0.4), rgba(255,255,255,0.06)); }
+.preview-title { font-family: var(--font); font-size: 18px; font-weight: 600; color: var(--tx-hi); letter-spacing: -0.01em; flex: none; }
+.preview-rule { flex: 1; height: 1px; background: var(--hairline); }
 .preview-meta { font-family: var(--mono); font-size: 11px; color: var(--cream-faint); white-space: nowrap; }
 @media (max-width: 560px) { .preview-meta { display: none; } }
 
@@ -495,10 +559,9 @@ body > * { position: relative; z-index: 1; }
 .data-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .data-table thead { position: sticky; top: 0; z-index: 1; }
 .data-table th {
-  background: rgba(18,15,9,0.92);
-  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  background: var(--surface-2);
   font-family: var(--mono); font-size: 10px; font-weight: 500;
-  letter-spacing: 0.14em; text-transform: uppercase; color: var(--cream-dim);
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--tx-mute);
   padding: 10px 14px; text-align: left;
   border-bottom: 1px solid var(--hairline); white-space: nowrap;
 }
@@ -581,37 +644,25 @@ details.log-details[open] summary { border-bottom: 1px solid var(--hairline-2); 
 /* ── EMPTY STATE ── */
 .empty-state {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  min-height: 400px; border-radius: 20px; padding: 52px 32px;
-  position: relative; overflow: hidden;
-}
-.empty-state::after {
-  content: ''; position: absolute; inset: 0;
-  background:
-    radial-gradient(ellipse at 50% 28%, rgba(237,201,79,0.07) 0%, transparent 60%);
-  pointer-events: none;
+  min-height: 380px; border-radius: var(--r-panel); padding: 52px 32px;
+  position: relative;
+  background: var(--surface); border: 1px solid var(--hairline-2);
 }
 .empty-state > * { position: relative; z-index: 1; }
 .empty-state-icon {
-  width: 56px; height: 56px; border-radius: 999px; margin-bottom: 20px;
+  width: 52px; height: 52px; border-radius: var(--r-control); margin-bottom: 20px;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(237,201,79,0.1); border: 1px solid rgba(237,201,79,0.3); color: var(--gold);
-  box-shadow: 0 12px 32px -12px rgba(237,201,79,0.4), inset 0 1px 0 rgba(255,255,255,0.08);
+  background: var(--surface-2); border: 1px solid var(--hairline); color: var(--gold);
 }
-.empty-state-icon svg { width: 25px; height: 25px; }
-.empty-state-title { font-family: var(--serif); font-size: 22px; font-weight: 400; color: var(--tx-hi); letter-spacing: 0; margin-bottom: 8px; }
-.empty-state-desc { font-size: 12.5px; color: var(--tx-mute); text-align: center; max-width: 320px; line-height: 1.7; margin-bottom: 26px; }
-.empty-steps { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.empty-state-icon svg { width: 24px; height: 24px; }
+.empty-state-title { font-family: var(--font); font-size: 18px; font-weight: 600; color: var(--tx-hi); letter-spacing: -0.01em; margin-bottom: 8px; }
+.empty-state-desc { font-size: 12.5px; color: var(--tx-mute); text-align: center; max-width: 340px; line-height: 1.7; margin-bottom: 22px; }
+.empty-steps { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .empty-step {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 11px; font-weight: 500; color: var(--tx-body);
-  background: rgba(255,255,255,0.04); border-radius: 999px; padding: 6px 14px 6px 7px;
-  box-shadow: inset 0 1px 1px rgba(255,255,255,0.08);
-}
-.empty-step span {
-  width: 18px; height: 18px; border-radius: 999px;
-  background: rgba(237,201,79,0.12); border: 1px solid rgba(237,201,79,0.4); color: var(--gold);
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--mono); font-size: 9.5px; font-weight: 700;
+  display: inline-flex; align-items: center;
+  font-size: 11.5px; font-weight: 500; color: var(--tx-mute);
+  background: var(--surface-2); border: 1px solid var(--hairline-2);
+  border-radius: var(--r-chip); padding: 6px 12px;
 }
 
 /* ── ANIMATIONS ── */
@@ -634,18 +685,12 @@ hr, .output-divider { border: none; border-top: 1px solid var(--hairline-2); mar
 <body>
 
 <!-- LOADING OVERLAY -->
-<div id="prp-load-overlay" style="position:fixed;inset:0;z-index:99998;background:#000000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;font-family:monospace;">
+<div id="prp-load-overlay" style="position:fixed;inset:0;z-index:99998;background:#0d0e11;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;font-family:monospace;">
   <svg id="prp-load-spin" width="34" height="34" viewBox="0 0 34 34" fill="none" style="animation:prp-spin 1s linear infinite;"><circle cx="17" cy="17" r="13" stroke="rgba(237,201,79,0.18)" stroke-width="3"/><path d="M17 4a13 13 0 0 1 13 13" stroke="#e0c040" stroke-width="3" stroke-linecap="round"/></svg>
   <div style="color:rgba(255,240,200,0.45);font-size:11px;letter-spacing:0.18em;text-transform:uppercase;">Loading</div>
   <div id="prp-load-err" style="display:none;color:#ff8080;font-size:12px;text-align:center;max-width:420px;padding:0 24px;line-height:1.8;"></div>
 </div>
 <style>@keyframes prp-spin { to { transform:rotate(360deg); } }</style>
-
-<!-- AMBIENT GOLD AURORA -->
-<div class="bg-fx" aria-hidden="true">
-  <div class="bg-aurora"></div>
-  <div class="bg-vignette"></div>
-</div>
 
 <!-- NAVBAR -->
 <header class="prp-header">
@@ -685,6 +730,51 @@ hr, .output-divider { border: none; border-top: 1px solid var(--hairline-2); mar
   </nav>
 </header>
 
+<!-- HERO · STEP 1 · CREATE PRP (branding lives in the navbar; hero leads with the tool) -->
+<section class="hero" id="hero" aria-label="Create PRP workbook">
+  <div class="hero-inner">
+    <div class="hero-eyebrow">Create PRP</div>
+    <h1 class="hero-title">Consolidate three exports into one workbook.</h1>
+    <p class="hero-sub">Drop the raw OneTrust and TPRM exports below to build the consolidated
+    PRP workbook, with dates normalised and ageing formulas added. Then scroll down to
+    generate all seven reports from it, fully offline.</p>
+
+    <div class="prp-builder glass ring ring-gold" id="prp-builder">
+      <div class="prp-builder-core">
+        <div class="upload-zone prp-dropzone" id="prp-dropzone">
+          <input type="file" id="prp-file-input" accept=".xlsx" multiple aria-label="Upload the three export files (.xlsx)">
+          <div class="upload-hint"><b>Drop all 3 exports</b>· or click to browse · risk-export · assessment-export · tprm / supplier</div>
+        </div>
+        <div class="prp-slots">
+          <div class="prp-slot" id="prp-slot-risk" data-kind="risk" role="button" tabindex="0" aria-label="Risk export slot — click to browse">
+            <input type="file" accept=".xlsx" aria-hidden="true" tabindex="-1">
+            <span class="prp-slot-kind"><span class="prp-slot-dot"></span>Risk export</span>
+            <span class="prp-slot-file">*risk-export*.xlsx</span>
+          </div>
+          <div class="prp-slot" id="prp-slot-assessment" data-kind="assessment" role="button" tabindex="0" aria-label="Assessment export slot — click to browse">
+            <input type="file" accept=".xlsx" aria-hidden="true" tabindex="-1">
+            <span class="prp-slot-kind"><span class="prp-slot-dot"></span>Assessment export</span>
+            <span class="prp-slot-file">*assessment-export*.xlsx</span>
+          </div>
+          <div class="prp-slot" id="prp-slot-tprm" data-kind="tprm" role="button" tabindex="0" aria-label="TPRM export slot — click to browse">
+            <input type="file" accept=".xlsx" aria-hidden="true" tabindex="-1">
+            <span class="prp-slot-kind"><span class="prp-slot-dot"></span>TPRM / Supplier</span>
+            <span class="prp-slot-file">*tprm* / *supplier*.xlsx</span>
+          </div>
+        </div>
+        <div class="prp-unassigned" id="prp-unassigned" hidden></div>
+        <button id="prp-generate-btn" class="run-btn" disabled>Create PRP workbook</button>
+        <div class="prp-status" id="prp-status">Add all three exports to enable</div>
+        <div class="run-outputs" id="prp-outputs"></div>
+      </div>
+    </div>
+  </div>
+  <button class="hero-cue" id="hero-cue" type="button" aria-label="Scroll to the report pipeline">
+    <span>Pipeline</span>
+    <span class="hero-cue-chevron"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+  </button>
+</section>
+
 <!-- SHELL -->
 <div class="shell">
 
@@ -694,9 +784,9 @@ hr, .output-divider { border: none; border-top: 1px solid var(--hairline-2); mar
     <!-- PIPELINE -->
     <section class="pipeline">
 
-      <!-- Step 1 · Workbook -->
+      <!-- Step 2 · Workbook -->
       <div class="pipe-card glass ring">
-        <div class="pipe-head"><span class="pipe-num">1</span><span class="pipe-label">Workbook</span></div>
+        <div class="pipe-head"><span class="pipe-label">Upload workbook</span></div>
         <div class="upload-zone" id="upload-zone">
           <input type="file" id="file-input" accept=".xlsx" aria-label="Upload workbook (.xlsx)">
           <div class="upload-hint"><b>Drop workbook</b>· or click to browse · .xlsx</div>
@@ -704,15 +794,15 @@ hr, .output-divider { border: none; border-top: 1px solid var(--hairline-2); mar
         <div id="file-ready-info"></div>
       </div>
 
-      <!-- Step 2 · Report variant -->
+      <!-- Step 3 · Report variant -->
       <div class="pipe-card glass ring">
-        <div class="pipe-head"><span class="pipe-num">2</span><span class="pipe-label">Report Variant</span></div>
+        <div class="pipe-head"><span class="pipe-label">Report variant</span></div>
         <div id="variant-radios" style="display:flex;flex-direction:column;min-width:0;"></div>
       </div>
 
-      <!-- Step 3 · Generate -->
+      <!-- Step 4 · Generate -->
       <div class="pipe-card pipe-run glass ring ring-gold">
-        <div class="pipe-head"><span class="pipe-num">3</span><span class="pipe-label">Generate</span></div>
+        <div class="pipe-head"><span class="pipe-label">Generate</span></div>
         <button id="run-btn" class="run-btn" disabled>Run report</button>
         <div class="run-hint" id="run-hint">Loading Python…</div>
         <div class="run-outputs" id="run-outputs"></div>
@@ -1171,6 +1261,313 @@ window.ReportBridge = (function () {
     return buildPayload(entry.id, result);
   }
   return { runReport, buildPayload, renderStyledPng, dataUrlToBase64, arrayBufferToBase64 };
+})();
+
+// ── Inlined: create-prp.js — CreatePRP — in-browser port of create_prp.py ──────────────────────────
+// Merges the 3 raw exports (risk-export / assessment-export / tprm|supplier)
+// into the consolidated PRP workbook the report pipeline consumes.
+//
+// Intentional deviations from create_prp.py:
+//  · TPRM sheet is named 'TPRM Web-Portal Export' (the Python writes
+//    'TPRM WebApp Portal', but reports d1/s1c and the shipped sample output
+//    read 'TPRM Web-Portal Export' — the Python name appears to be drift).
+//  · Every appended formula cell also carries its computed result
+//    ({formula, result}) so the in-browser reports — which read cached
+//    values, never recalculate — see real data. Excel still recalculates on
+//    open (calcProperties.fullCalcOnLoad), keeping TODAY() fresh.
+window.CreatePRP = (function () {
+  'use strict';
+
+  var SHEET_RISK = 'OneTrust - Risk Export';
+  var SHEET_TPRM = 'TPRM Web-Portal Export';   // deviation — see header comment
+  var SHEET_ASSESSMENT = 'OneTrust Assessment';
+  var OUTPUT_NAME = 'PRP Sample Jun (2).xlsx';
+
+  var MS_PER_DAY = 86400000;
+  var EXCEL_EPOCH = Date.UTC(1899, 11, 30);    // Excel serial 0
+  var SEP26_SERIAL = serialFromDate(new Date(Date.UTC(2026, 8, 30))); // DATE(2026,9,30)
+
+  function _yield() { return new Promise(function (res) { setTimeout(res, 0); }); }
+
+  // ── classify — mirrors find_source_files()'s filename checks ────────────
+  function classify(fileName) {
+    var lower = String(fileName || '').toLowerCase();
+    if (!/\.xlsx$/.test(lower)) return null;
+    if (lower.indexOf('risk-export') !== -1) return 'risk';
+    if (lower.indexOf('assessment-export') !== -1) return 'assessment';
+    if (lower.indexOf('tprm') !== -1 || lower.indexOf('supplier') !== -1) return 'tprm';
+    return null;
+  }
+
+  // ── date parsing — the 5 strptime formats, in the Python's order ────────
+  // %Y is exactly 4 digits; day/month accept 1-2; invalid calendar dates
+  // (31/02/…) fall through to the next format, like strptime raising.
+  var DATE_FORMATS = [
+    { re: /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, d: 1, m: 2, y: 3 },  // %d/%m/%Y
+    { re: /^(\d{1,2})-(\d{1,2})-(\d{4})$/,  d: 1, m: 2, y: 3 },   // %d-%m-%Y
+    { re: /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, d: 2, m: 1, y: 3 },  // %m/%d/%Y
+    { re: /^(\d{4})-(\d{1,2})-(\d{1,2})$/,  d: 3, m: 2, y: 1 },   // %Y-%m-%d
+    { re: /^(\d{1,2})-(\d{1,2})-(\d{4})$/,  d: 2, m: 1, y: 3 },   // %m-%d-%Y
+  ];
+  // UTC construction is load-bearing: ExcelJS serializes Dates via UTC epoch
+  // math, so a local-midnight Date in a UTC+ timezone saves as the previous day.
+  function parseDateString(s) {
+    var str = String(s).trim();
+    for (var i = 0; i < DATE_FORMATS.length; i++) {
+      var f = DATE_FORMATS[i], m = f.re.exec(str);
+      if (!m) continue;
+      var y = +m[f.y], mo = +m[f.m], d = +m[f.d];
+      if (mo < 1 || mo > 12 || d < 1 || d > 31) continue;
+      var dt = new Date(Date.UTC(y, mo - 1, d));
+      if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) continue;
+      return dt;
+    }
+    return null;
+  }
+
+  function serialFromDate(d) { return Math.round((d.getTime() - EXCEL_EPOCH) / MS_PER_DAY); }
+  function todayUTC() {
+    var now = new Date();
+    return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  }
+
+  // NETWORKDAYS(a,b): inclusive Mon–Fri count; negative when a > b.
+  function networkdaysSerial(a, b) {
+    var sign = 1;
+    if (a > b) { var t = a; a = b; b = t; sign = -1; }
+    var days = b - a + 1;
+    var fullWeeks = Math.floor(days / 7);
+    var count = fullWeeks * 5;
+    var rem = days - fullWeeks * 7;
+    var dow = new Date(EXCEL_EPOCH + a * MS_PER_DAY).getUTCDay(); // 0=Sun … 6=Sat
+    for (var i = 0; i < rem; i++) {
+      var d = (dow + i) % 7;
+      if (d !== 0 && d !== 6) count++;
+    }
+    return sign * count;
+  }
+
+  // Excel-comparison view of a copied cell value:
+  //  blank → serial 0 (Excel treats blank as 0 in arithmetic/comparisons),
+  //  Date/number → its serial, anything else → text (arithmetic would #VALUE!).
+  function serialOf(v) {
+    if (v === null || v === undefined || v === '') return { kind: 'blank', serial: 0 };
+    if (v instanceof Date) return { kind: 'num', serial: serialFromDate(v) };
+    if (typeof v === 'number') return { kind: 'num', serial: v };
+    if (typeof v === 'boolean') return { kind: 'num', serial: v ? 1 : 0 };
+    return { kind: 'text', serial: null };
+  }
+
+  // Collapse an ExcelJS rich value to the plain value openpyxl would see.
+  function plainVal(v) {
+    if (v === null || v === undefined) return null;
+    if (v instanceof Date) return v;
+    if (typeof v === 'object') {
+      if (v.richText) return v.richText.map(function (t) { return t.text; }).join('');
+      if ('formula' in v || 'sharedFormula' in v) return v.result === undefined ? null : v.result;
+      if ('text' in v) return v.text;   // hyperlink → display text
+      if ('error' in v) return null;
+      if ('result' in v) return v.result === undefined ? null : v.result;
+      return null;
+    }
+    return v;
+  }
+
+  // Copy value preserving formulas ({formula, result}) like openpyxl copies
+  // formula strings; everything else collapses to the plain value.
+  function copyVal(v) {
+    if (v !== null && v !== undefined && typeof v === 'object' && !(v instanceof Date) &&
+        ('formula' in v || 'sharedFormula' in v)) {
+      return { formula: v.formula || v.sharedFormula, result: v.result };
+    }
+    return plainVal(v);
+  }
+
+  // ── copy_sheet — coordinate-preserving value copy ───────────────────────
+  async function copySheet(src, target, progress, label) {
+    var rows = src.rowCount, cols = src.columnCount;
+    for (var r = 1; r <= rows; r++) {
+      var vals = src.getRow(r).values;   // sparse array indexed by column number
+      for (var c = 1; c <= cols; c++) {
+        var v = vals[c];
+        if (v === undefined || v === null) continue;
+        var nv = copyVal(v);
+        if (nv === null) continue;
+        var cell = target.getCell(r, c);
+        cell.value = nv;
+        // openpyxl auto-formats datetime cells; ExcelJS shows a raw serial
+        // without a numFmt, so mirror openpyxl's default here.
+        if (nv instanceof Date) cell.numFmt = 'yyyy-mm-dd h:mm:ss';
+      }
+      if ((r & 2047) === 0) {
+        progress('Copying ' + label + ' — row ' + r.toLocaleString() + ' of ' + rows.toLocaleString() + '…');
+        await _yield();
+      }
+    }
+  }
+
+  // ── find_column / add_column (the case-sensitivity asymmetry is Python's) ──
+  function findColumn(ws, headerName) {
+    var target = String(headerName).toLowerCase();
+    for (var c = 1; c <= ws.columnCount; c++) {
+      var v = plainVal(ws.getCell(1, c).value);
+      if (v !== null && String(v).trim().toLowerCase() === target) return c;
+    }
+    return null;
+  }
+  function addColumn(ws, headerName) {
+    for (var c = 1; c <= ws.columnCount; c++) {
+      var v = plainVal(ws.getCell(1, c).value);
+      if (v !== null && String(v).trim() === headerName) return c;
+    }
+    var newCol = ws.columnCount + 1;
+    ws.getCell(1, newCol).value = headerName;
+    return newCol;
+  }
+
+  async function convertDateColumn(ws, colNum) {
+    if (!colNum) return;
+    for (var r = 2; r <= ws.rowCount; r++) {
+      var cell = ws.getCell(r, colNum);
+      var v = cell.value;
+      if (v === null || v === undefined) continue;
+      if (v instanceof Date) { cell.numFmt = 'dd-mm-yyyy'; continue; }
+      var parsed = parseDateString(String(v));
+      if (parsed) { cell.value = parsed; cell.numFmt = 'dd-mm-yyyy'; }
+      if ((r & 2047) === 0) await _yield();
+    }
+  }
+
+  // ── process_risk_export ─────────────────────────────────────────────────
+  async function processRiskExport(ws, warnings) {
+    await convertDateColumn(ws, findColumn(ws, 'Date created'));
+    var agingCol = addColumn(ws, 'Aging');
+    var todaySerial = serialFromDate(todayUTC());
+    for (var r = 2; r <= ws.rowCount; r++) {
+      var n = serialOf(plainVal(ws.getCell(r, 14).value));  // column N — hardcoded like the Python
+      var cellVal = { formula: 'NETWORKDAYS(N' + r + ',TODAY())' };
+      if (n.kind !== 'text') cellVal.result = networkdaysSerial(n.serial, todaySerial);
+      else warnings.push(SHEET_RISK + ' row ' + r + ': N is text — Aging left to Excel');
+      ws.getCell(r, agingCol).value = cellVal;
+      if ((r & 2047) === 0) await _yield();
+    }
+  }
+
+  // ── process_assessment ──────────────────────────────────────────────────
+  async function processAssessment(ws, warnings) {
+    await convertDateColumn(ws, findColumn(ws, 'Date created'));
+    await convertDateColumn(ws, findColumn(ws, 'Date submitted'));
+    var ageingCol = addColumn(ws, 'Ageing');
+    var working1Col = addColumn(ws, 'Working1');
+    var working2Col = addColumn(ws, 'Working2');
+    var sep26Col = addColumn(ws, '30sep26');
+    var todaySerial = serialFromDate(todayUTC());
+    var CUTOFF_2025 = serialFromDate(new Date(Date.UTC(2025, 11, 31))); // DATE(2025,12,31)
+
+    for (var r = 2; r <= ws.rowCount; r++) {
+      var cRaw = plainVal(ws.getCell(r, 3).value);   // column C
+      var nRaw = plainVal(ws.getCell(r, 14).value);  // column N
+      var oRaw = plainVal(ws.getCell(r, 15).value);  // column O
+      var n = serialOf(nRaw), o = serialOf(oRaw);
+
+      // Ageing
+      var ageing = { formula: 'NETWORKDAYS(N' + r + ',TODAY())' };
+      if (n.kind !== 'text') ageing.result = networkdaysSerial(n.serial, todaySerial);
+      else warnings.push(SHEET_ASSESSMENT + ' row ' + r + ': N is text — Ageing left to Excel');
+      ws.getCell(r, ageingCol).value = ageing;
+
+      // Working1 — Excel semantics: text "=" is case-insensitive; text > number
+      // ranks TRUE; blank compares as 0; blank cell equals "".
+      var cTxt = (cRaw === null || cRaw === undefined) ? '' : String(cRaw).toLowerCase();
+      var isDone = (cTxt === 'completed' || cTxt === 'under review');
+      var oGT = (o.kind === 'num') ? o.serial > CUTOFF_2025
+              : (o.kind === 'text');
+      var oBlank = (o.kind === 'blank');
+      ws.getCell(r, working1Col).value = {
+        formula: 'IF(AND(OR(C' + r + '="Completed",C' + r + '="Under Review"),O' + r + '>DATE(2025,12,31)),' +
+                 '"Completed in 2026",IF(O' + r + '="","Pending","Completed Before 2026"))',
+        result: (isDone && oGT) ? 'Completed in 2026' : (oBlank ? 'Pending' : 'Completed Before 2026'),
+      };
+
+      // Working2
+      var w2 = { formula: 'IF(DATE(2026,9,30)-N' + r + '>=365,"Beyond 1 Year Overdue","Current")' };
+      if (n.kind !== 'text') w2.result = (SEP26_SERIAL - n.serial >= 365) ? 'Beyond 1 Year Overdue' : 'Current';
+      else warnings.push(SHEET_ASSESSMENT + ' row ' + r + ': N is text — Working2 left to Excel');
+      ws.getCell(r, working2Col).value = w2;
+
+      // 30sep26
+      var s26 = { formula: 'DATE(2026,9,30)-N' + r };
+      if (n.kind !== 'text') s26.result = SEP26_SERIAL - n.serial;
+      ws.getCell(r, sep26Col).value = s26;
+
+      if ((r & 2047) === 0) await _yield();
+    }
+  }
+
+  async function loadFirstSheet(file) {
+    var wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await file.arrayBuffer());
+    var ws = wb.worksheets[0];   // Python's wb.active
+    if (!ws) throw new Error('"' + file.name + '" has no worksheets');
+    return ws;
+  }
+
+  // ── build — main(). files = { risk: File, assessment: File, tprm: File } ──
+  async function build(files, onProgress) {
+    var progress = onProgress || function () {};
+    var warnings = [];
+    if (!files.risk) throw new Error('Risk export file not found.');
+    if (!files.assessment) throw new Error('Assessment export file not found.');
+    if (!files.tprm) throw new Error('TPRM export file not found.');
+
+    var out = new ExcelJS.Workbook();
+    out.calcProperties.fullCalcOnLoad = true;   // Excel refreshes TODAY() maths on open
+    var wsTprm = out.addWorksheet(SHEET_TPRM);
+    var wsAssessment = out.addWorksheet(SHEET_ASSESSMENT);
+    var wsRisk = out.addWorksheet(SHEET_RISK);
+
+    progress('Reading risk export…');
+    var srcRisk = await loadFirstSheet(files.risk);
+    progress('Reading TPRM export…');
+    var srcTprm = await loadFirstSheet(files.tprm);
+    progress('Reading assessment export…');
+    var srcAssessment = await loadFirstSheet(files.assessment);
+
+    await copySheet(srcRisk, wsRisk, progress, 'risk export');
+    await copySheet(srcTprm, wsTprm, progress, 'TPRM export');
+    await copySheet(srcAssessment, wsAssessment, progress, 'assessment export');
+
+    progress('Adding risk ageing formulas…');
+    await processRiskExport(wsRisk, warnings);
+    progress('Adding assessment formulas…');
+    await processAssessment(wsAssessment, warnings);
+
+    progress('Writing workbook…');
+    var bytes = await out.xlsx.writeBuffer();
+    return {
+      bytes: bytes,
+      warnings: warnings,
+      stats: {
+        risk: { rows: wsRisk.rowCount, cols: wsRisk.columnCount },
+        tprm: { rows: wsTprm.rowCount, cols: wsTprm.columnCount },
+        assessment: { rows: wsAssessment.rowCount, cols: wsAssessment.columnCount },
+      },
+    };
+  }
+
+  return {
+    classify: classify,
+    build: build,
+    OUTPUT_NAME: OUTPUT_NAME,
+    // exposed for tests
+    _internal: {
+      parseDateString: parseDateString,
+      networkdaysSerial: networkdaysSerial,
+      serialFromDate: serialFromDate,
+      serialOf: serialOf,
+      plainVal: plainVal,
+    },
+  };
 })();
 
 // ── Inlined: reports/d1.js ───────────────────────────────────────────────
@@ -1772,9 +2169,10 @@ function renderResults() {
       '<div class="empty-state-desc">Choose a report, drop in your workbook, then generate. ' +
       'Downloads appear with the Run button; tables and charts render below.</div>' +
       '<div class="empty-steps">' +
-      '<div class="empty-step"><span>1</span>Select report</div>' +
-      '<div class="empty-step"><span>2</span>Upload workbook</div>' +
-      '<div class="empty-step"><span>3</span>Run</div>' +
+      '<div class="empty-step">Create PRP</div>' +
+      '<div class="empty-step">Upload workbook</div>' +
+      '<div class="empty-step">Select report</div>' +
+      '<div class="empty-step">Run</div>' +
       '</div>' +
       '</div>';
     return;
@@ -1936,6 +2334,9 @@ function renderResults() {
       : buildBar(sheet.chart, null);
     Plotly.newPlot(el, cfg.traces, cfg.layout, { displayModeBar: false, responsive: true });
   });
+
+  // Results change the page height — let ScrollTrigger re-measure.
+  if (window.ScrollTrigger) ScrollTrigger.refresh();
 }
 
 // ---------------------------------------------------------------------------
@@ -2029,6 +2430,232 @@ function b64ToBytes(b64) {
   return bytes;
 }
 
+// ── Inlined: hero.js — Hero — Create PRP builder UI + GSAP choreography ──────────────────────
+// The builder drives window.CreatePRP and hands the generated workbook to the
+// existing pipeline via handleFileChange(). Animations are strictly
+// progressive enhancement: nothing is hidden in CSS, all entrances are GSAP
+// .from() tweens, and the page is fully usable if GSAP never loads.
+(function () {
+  'use strict';
+
+  var XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  var KIND_LABEL = { risk: 'Risk export', assessment: 'Assessment export', tprm: 'TPRM / Supplier' };
+  var SLOT_HINT = {
+    risk: '*risk-export*.xlsx',
+    assessment: '*assessment-export*.xlsx',
+    tprm: '*tprm* / *supplier*.xlsx',
+  };
+  var ICON_DL = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>';
+
+  var H = { files: { risk: null, assessment: null, tprm: null }, unassigned: [], running: false, url: null };
+
+  function el(id) { return document.getElementById(id); }
+  function escText(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function setStatus(msg, cls) {
+    var s = el('prp-status');
+    if (!s) return;
+    s.textContent = msg;
+    s.className = 'prp-status' + (cls ? ' ' + cls : '');
+  }
+
+  function missingKinds() {
+    return ['risk', 'assessment', 'tprm'].filter(function (k) { return !H.files[k]; });
+  }
+
+  function updateGenerateBtn() {
+    var btn = el('prp-generate-btn');
+    var missing = missingKinds();
+    btn.disabled = missing.length > 0 || H.running;
+    btn.textContent = H.running ? 'Creating…' : 'Create PRP workbook';
+    if (!H.running) {
+      if (missing.length === 3) setStatus('Add all three exports to enable');
+      else if (missing.length) setStatus('Still missing: ' + missing.map(function (k) { return KIND_LABEL[k]; }).join(' · '));
+      else setStatus('Ready to create the consolidated workbook');
+    }
+  }
+
+  function renderSlots() {
+    ['risk', 'assessment', 'tprm'].forEach(function (kind) {
+      var slot = el('prp-slot-' + kind);
+      var f = H.files[kind];
+      slot.classList.toggle('filled', !!f);
+      var fileEl = slot.querySelector('.prp-slot-file');
+      fileEl.textContent = f ? (f.name + ' · ' + (f.size / 1024).toFixed(1) + ' KB') : SLOT_HINT[kind];
+    });
+    renderUnassigned();
+    updateGenerateBtn();
+  }
+
+  function renderUnassigned() {
+    var tray = el('prp-unassigned');
+    if (!H.unassigned.length) { tray.hidden = true; tray.innerHTML = ''; return; }
+    tray.hidden = false;
+    var html = '<div class="prp-unassigned-hint">Could not recognise these from their filenames. Assign manually:</div>';
+    H.unassigned.forEach(function (f, i) {
+      html += '<div class="prp-unassigned-row"><span class="prp-unassigned-name" title="' + escText(f.name) + '">' + escText(f.name) + '</span>' +
+        ['risk', 'assessment', 'tprm'].map(function (k) {
+          return '<button type="button" class="prp-assign-btn" data-idx="' + i + '" data-kind="' + k + '">' + KIND_LABEL[k] + '</button>';
+        }).join('') + '</div>';
+    });
+    tray.innerHTML = html;
+    tray.querySelectorAll('.prp-assign-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var f = H.unassigned.splice(+btn.dataset.idx, 1)[0];
+        if (f) assign(btn.dataset.kind, f);
+        renderSlots();
+      });
+    });
+  }
+
+  function assign(kind, file) {
+    // Last file wins, like the Python folder scan — but say so.
+    if (H.files[kind]) setStatus('Replaced ' + KIND_LABEL[kind] + ' with "' + file.name + '"');
+    H.files[kind] = file;
+  }
+
+  function addFiles(fileList) {
+    var skipped = 0;
+    Array.prototype.slice.call(fileList).forEach(function (f) {
+      if (!/\.xlsx$/i.test(f.name)) { skipped++; return; }
+      var kind = window.CreatePRP.classify(f.name);
+      if (kind) assign(kind, f);
+      else H.unassigned.push(f);
+    });
+    renderSlots();
+    if (skipped) setStatus(skipped + ' file' + (skipped > 1 ? 's' : '') + ' skipped. Only .xlsx exports are supported', 'err');
+  }
+
+  async function handleGenerate() {
+    if (H.running) return;
+    if (typeof ExcelJS === 'undefined' || !ExcelJS.Workbook) {
+      setStatus('Excel engine still loading. Try again in a moment', 'err');
+      return;
+    }
+    H.running = true;
+    updateGenerateBtn();
+    var out = el('prp-outputs');
+    out.classList.remove('show');
+    out.innerHTML = '';
+    try {
+      var res = await window.CreatePRP.build(H.files, function (msg) { setStatus(msg); });
+      var name = window.CreatePRP.OUTPUT_NAME;
+      if (H.url) URL.revokeObjectURL(H.url);
+      H.url = URL.createObjectURL(new Blob([res.bytes], { type: XLSX_MIME }));
+      out.innerHTML =
+        '<div class="run-out-top">' +
+        '<span class="run-out-label">Download &middot; consolidated workbook</span>' +
+        '<span class="run-out-ok">&#9679; complete</span>' +
+        '</div>' +
+        '<div class="dl-grid"><a class="dl-btn" href="' + H.url + '" download="' + escText(name) + '">' + ICON_DL + escText(name) + '</a></div>';
+      out.classList.add('show');
+
+      // Auto-feed the generated workbook into the pipeline's Workbook step.
+      var fed = false;
+      try {
+        if (typeof handleFileChange === 'function' && typeof File === 'function') {
+          handleFileChange(new File([res.bytes], name, { type: XLSX_MIME }));
+          fed = true;
+        }
+      } catch (e) { /* download remains the handoff */ }
+      var okMsg = fed
+        ? 'Workbook created. Download above; it is already loaded into Step 2 below'
+        : 'Workbook created. Download it, then upload in Step 2 below';
+      if (res.warnings.length) {
+        okMsg += ' · ' + res.warnings.length + ' warning' + (res.warnings.length > 1 ? 's' : '') + ' (see console)';
+        console.warn('CreatePRP warnings:', res.warnings);
+      }
+      setStatus(okMsg, 'ok');
+      if (window.ScrollTrigger) ScrollTrigger.refresh();
+    } catch (err) {
+      setStatus('Failed: ' + (err && err.message ? err.message : String(err)), 'err');
+    } finally {
+      H.running = false;
+      var btn = el('prp-generate-btn');
+      btn.disabled = missingKinds().length > 0;
+      btn.textContent = 'Create PRP workbook';
+    }
+  }
+
+  window.setupHeroBuilder = function setupHeroBuilder() {
+    var dz = el('prp-dropzone');
+    if (!dz) return;
+
+    el('prp-file-input').addEventListener('change', function (e) {
+      if (e.target.files.length) addFiles(e.target.files);
+      e.target.value = '';
+    });
+    dz.addEventListener('dragover', function (e) { e.preventDefault(); dz.classList.add('drag-over'); });
+    dz.addEventListener('dragleave', function () { dz.classList.remove('drag-over'); });
+    dz.addEventListener('drop', function (e) {
+      e.preventDefault();
+      dz.classList.remove('drag-over');
+      if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+    });
+
+    ['risk', 'assessment', 'tprm'].forEach(function (kind) {
+      var slot = el('prp-slot-' + kind);
+      var input = slot.querySelector('input[type="file"]');
+      input.addEventListener('click', function (e) { e.stopPropagation(); });
+      slot.addEventListener('click', function () { input.click(); });
+      slot.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+      });
+      input.addEventListener('change', function (e) {
+        if (e.target.files.length) {
+          var f = e.target.files[0];
+          if (/\.xlsx$/i.test(f.name)) { assign(kind, f); renderSlots(); }
+          else setStatus('Only .xlsx files are supported', 'err');
+        }
+        e.target.value = '';
+      });
+    });
+
+    el('prp-generate-btn').addEventListener('click', handleGenerate);
+
+    var cue = el('hero-cue');
+    if (cue) cue.addEventListener('click', function () {
+      var target = document.querySelector('.shell');
+      var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (target) target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    });
+
+    renderSlots();
+  };
+
+  // ── GSAP choreography — idempotent; callable from the vendor loader and
+  // from init(), whichever lands last with everything in place wins. ──
+  var _heroAnimated = false;
+  window.tryInitHeroAnimations = function tryInitHeroAnimations() {
+    if (_heroAnimated) return;
+    if (!window.gsap || !window.ScrollTrigger) return;
+    if (!document.getElementById('hero')) return;
+    // Wait for the boot overlay to clear — otherwise the entrance plays unseen.
+    var overlay = document.getElementById('prp-load-overlay');
+    if (overlay && overlay.style.display !== 'none') return;
+    _heroAnimated = true;
+
+    gsap.registerPlugin(ScrollTrigger);
+    gsap.matchMedia().add('(prefers-reduced-motion: no-preference)', function () {
+      // Restrained corporate entrance — a short settle, no flourishes.
+      var tl = gsap.timeline({ defaults: { ease: 'power2.out' } });
+      tl.from('.hero-eyebrow', { autoAlpha: 0, y: 8, duration: 0.4 })
+        .from('.hero-title',   { autoAlpha: 0, y: 14, duration: 0.5 }, '-=0.2')
+        .from('.hero-sub',     { autoAlpha: 0, y: 12, duration: 0.45 }, '-=0.32')
+        .from('#prp-builder',  { autoAlpha: 0, y: 16, duration: 0.5 }, '-=0.28')
+        .from('.hero-cue',     { autoAlpha: 0, duration: 0.4 }, '-=0.15');
+      if (window.scrollY > 40) tl.progress(1);  // deep-scrolled reload: skip intro
+
+      gsap.from('.pipeline .pipe-card', {
+        y: 18, autoAlpha: 0, duration: 0.45, stagger: 0.08, ease: 'power2.out',
+        scrollTrigger: { trigger: '.pipeline', start: 'top 84%', once: true },
+      });
+    });
+  };
+})();
+
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
@@ -2057,6 +2684,10 @@ async function init() {
   document.getElementById('run-btn').addEventListener('click', handleRun);
 
   updateRunBtn();
+
+  // Hero — Create PRP builder + scroll choreography (progressive enhancement)
+  setupHeroBuilder();
+  tryInitHeroAnimations();
 }
 
 window._PRPReady(
