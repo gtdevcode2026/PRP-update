@@ -176,16 +176,44 @@ window.Reports.d2 = async function d2(wb) {
   grid.forEach(function (r) { ws.addRow(r); });
   ws.columns.forEach(function (c) { c.width = 16; });
 
-  if (images.org) {
-    var id1 = workbook.addImage({ base64: images.org, extension: 'png' });
-    ws.addImage(id1, { tl: { col: 5, row: 1 }, ext: { width: 480, height: 300 } }); // ~"F2"
-  }
-  if (images.kpi) {
-    var id2 = workbook.addImage({ base64: images.kpi, extension: 'png' });
-    ws.addImage(id2, { tl: { col: 5, row: 22 }, ext: { width: 480, height: 260 } }); // ~"F23"
+  // Native, editable charts (data-linked to hidden helper blocks) replace the
+  // two baked PNGs: org = stacked column, kpi = horizontal percent bar.
+  var placements = [];
+  if (window.NativeChartInject && window.fflate) {
+    if (orgLabels.length) {
+      var orgBlk = window.NativeChartInject.buildDataBlock(ws, 'Dashboard', orgLabels, [
+        { name: 'Open', cache: openVals, color: '00AEEF' },
+        { name: 'Closed', cache: closedVals, color: 'D4AF37' },
+      ], 20);
+      placements.push({
+        sheetName: 'Dashboard', anchor: { fromCol: 5, fromRow: 1, toCol: 14, toRow: 20 }, // ~"F2"
+        def: Object.assign({
+          grouping: 'stacked', legend: true, title: '2026 Assessment (' + closedTotal + '/' + recordTotal + ')',
+          chartBg: '000000', plotBg: '000000', axisColor: 'FFFFFF',
+          dataLabels: { position: 'ctr', color: 'FFFFFF' },
+        }, orgBlk),
+      });
+    }
+    if (kpiMetrics.length) {
+      var kpiBlk = window.NativeChartInject.buildDataBlock(ws, 'Dashboard', kpiMetrics, [
+        { name: 'Improvement', cache: kpiValues, color: '4472C4' },
+      ], 27);
+      placements.push({
+        sheetName: 'Dashboard', anchor: { fromCol: 5, fromRow: 22, toCol: 14, toRow: 40 }, // ~"F23"
+        def: Object.assign({
+          grouping: 'clustered', barDir: 'bar', catReversed: true, legend: false,
+          title: 'Improve in Supplier Response Time', valNumFmt: '0%',
+          dataLabels: { position: 'outEnd', numFmt: '0%', color: '000000' },
+        }, kpiBlk),
+      });
+    }
   }
 
   var buf = await workbook.xlsx.writeBuffer();
+  if (placements.length) {
+    try { buf = window.NativeChartInject.inject(new Uint8Array(buf), placements); }
+    catch (e) { console.error('d2 native chart inject failed:', e); }
+  }
 
   return {
     ok: true,

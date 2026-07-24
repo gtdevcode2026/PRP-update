@@ -36,6 +36,21 @@ const pp = NC.chartXml({ grouping: 'clustered', legend: false,
 assert.ok(pp.includes('<c:dPt>'), 'has data points');
 assert.ok(pp.includes('<a:srgbClr val="BFBFBF"/>'), 'per-point color');
 
+// horizontal bar + percent axis + reversed categories
+const hb = NC.chartXml({ grouping: 'clustered', legend: false, barDir: 'bar',
+  catReversed: true, valNumFmt: '0%',
+  dataLabels: { position: 'outEnd', numFmt: '0%', color: '000000' },
+  categories: { ref: "'S'!$A$1:$A$2", cache: ['m1', 'm2'] },
+  series: [ { name: { lit: 'kpi' }, values: { ref: "'S'!$B$1:$B$2", cache: [0.5, 0.8] }, color: '4472C4' } ] });
+assert.ok(hb.includes('<c:barDir val="bar"/>'), 'horizontal barDir');
+assert.ok(hb.includes('<c:numFmt formatCode="0%" sourceLinked="0"/>'), 'percent numfmt');
+assert.ok(hb.includes('<c:orientation val="maxMin"/>'), 'reversed category orientation');
+assert.ok(/<c:catAx>[\s\S]*<c:axPos val="l"\/>/.test(hb), 'cat axis on left for bar');
+assert.ok(/<c:valAx>[\s\S]*<c:axPos val="b"\/>/.test(hb), 'val axis on bottom for bar');
+
+// plot hidden cells (helper blocks rely on this)
+assert.ok(xml.includes('<c:plotVisOnly val="0"/>'), 'plotVisOnly=0');
+
 // drawing
 const d = NC.drawingXml({ fromCol: 6, fromRow: 1, toCol: 14, toRow: 21 }, 'rId1');
 assert.ok(d.includes('<xdr:twoCellAnchor>'), 'anchor');

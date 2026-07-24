@@ -233,14 +233,36 @@ window.Reports.s4 = async function s4(wb) {
   var wsDash = workbook.addWorksheet('Dashboard');
   g.forEach(function (r) { wsDash.addRow(r); });
   wsDash.columns.forEach(function (c) { c.width = 16; });
-  var progId = workbook.addImage({ base64: progressChartPng, extension: 'png' });
-  wsDash.addImage(progId, { tl: { col: 6, row: 1 }, ext: { width: 480, height: 300 } }); // ~"G2"
+  // Native, editable progress chart (data-linked to a hidden helper block)
+  // replaces the baked PNG: single gold series with the first and last bars
+  // recolored gray (Baseline/Target), white centered labels, no legend.
+  var s4Placements = [];
+  if (window.NativeChartInject && window.fflate && calcLabels.length) {
+    var s4Points = calcLabels.map(function (_, i) {
+      return (i === 0 || i === calcLabels.length - 1) ? { idx: i, color: 'BFBFBF' } : null;
+    }).filter(Boolean);
+    var s4Blk = window.NativeChartInject.buildDataBlock(wsDash, 'Dashboard', calcLabels, [
+      { name: 'Progress', cache: calcValues, color: 'FFC000', points: s4Points },
+    ], 20);
+    s4Placements.push({
+      sheetName: 'Dashboard', anchor: { fromCol: 6, fromRow: 1, toCol: 15, toRow: 20 }, // ~"G2"
+      def: Object.assign({
+        grouping: 'clustered', legend: false, title: 'Cumulative Risk Treatment Progress',
+        chartBg: '000000', plotBg: '000000', axisColor: 'FFFFFF',
+        dataLabels: { position: 'ctr', color: 'FFFFFF' },
+      }, s4Blk),
+    });
+  }
 
   var wsHistUsed = workbook.addWorksheet('History Used');
   historyGrid.forEach(function (r) { wsHistUsed.addRow(r); });
   wsHistUsed.columns.forEach(function (c) { c.width = 16; });
 
   var riskOutputBuf = await workbook.xlsx.writeBuffer();
+  if (s4Placements.length) {
+    try { riskOutputBuf = window.NativeChartInject.inject(new Uint8Array(riskOutputBuf), s4Placements); }
+    catch (e) { console.error('s4 native chart inject failed:', e); }
+  }
 
   var historyWorkbook = new ExcelJS.Workbook();
   var wsHistOnly = historyWorkbook.addWorksheet('Sheet1');

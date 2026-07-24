@@ -55,11 +55,12 @@
 
   function dataLabels(dl) {
     if (!dl) return '';
+    var numFmt = dl.numFmt ? '<c:numFmt formatCode="' + dl.numFmt + '" sourceLinked="0"/>' : '';
     var txPr = dl.color
       ? '<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill>' +
         '<a:srgbClr val="' + dl.color + '"/></a:solidFill></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>'
       : '';
-    return '<c:dLbls>' + txPr + '<c:dLblPos val="' + dl.position + '"/>' +
+    return '<c:dLbls>' + numFmt + txPr + '<c:dLblPos val="' + dl.position + '"/>' +
       '<c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/>' +
       '<c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls>';
   }
@@ -91,21 +92,28 @@
     var plotFill = def.plotBg
       ? '<c:spPr><a:solidFill><a:srgbClr val="' + def.plotBg + '"/></a:solidFill></c:spPr>'
       : '<c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr>';
+    // barDir 'col' = vertical columns (default), 'bar' = horizontal bars.
+    // For horizontal bars the category axis sits on the left, value axis below.
+    var barDir = def.barDir || 'col';
+    var catPos = barDir === 'bar' ? 'l' : 'b';
+    var valPos = barDir === 'bar' ? 'b' : 'l';
+    var catOrient = def.catReversed ? 'maxMin' : 'minMax';
+    var valNumFmt = def.valNumFmt ? '<c:numFmt formatCode="' + def.valNumFmt + '" sourceLinked="0"/>' : '';
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<c:chartSpace xmlns:c="' + C + '" xmlns:a="' + A + '" xmlns:r="' + R + '">' +
       '<c:roundedCorners val="0"/><c:chart>' + title +
       '<c:plotArea><c:layout/>' +
-      '<c:barChart><c:barDir val="col"/><c:grouping val="' + def.grouping + '"/>' +
+      '<c:barChart><c:barDir val="' + barDir + '"/><c:grouping val="' + def.grouping + '"/>' +
       '<c:varyColors val="0"/>' + sers + gap + overlap +
       '<c:axId val="' + CAT + '"/><c:axId val="' + VAL + '"/></c:barChart>' +
-      '<c:catAx><c:axId val="' + CAT + '"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
-      '<c:delete val="0"/><c:axPos val="b"/>' + axisTxt(def.axisColor) +
+      '<c:catAx><c:axId val="' + CAT + '"/><c:scaling><c:orientation val="' + catOrient + '"/></c:scaling>' +
+      '<c:delete val="0"/><c:axPos val="' + catPos + '"/>' + axisTxt(def.axisColor) +
       '<c:crossAx val="' + VAL + '"/></c:catAx>' +
       '<c:valAx><c:axId val="' + VAL + '"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
-      '<c:delete val="0"/><c:axPos val="l"/><c:majorGridlines/>' + axisTxt(def.axisColor) +
+      '<c:delete val="0"/><c:axPos val="' + valPos + '"/><c:majorGridlines/>' + valNumFmt + axisTxt(def.axisColor) +
       '<c:crossAx val="' + CAT + '"/></c:valAx>' +
       plotFill + '</c:plotArea>' + legend +
-      '<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart>' +
+      '<c:plotVisOnly val="0"/><c:dispBlanksAs val="gap"/></c:chart>' +
       chartSpaceFill + '</c:chartSpace>';
   }
 

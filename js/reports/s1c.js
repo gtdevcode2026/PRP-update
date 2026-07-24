@@ -119,16 +119,33 @@ window.Reports.s1c = async function s1c(wb) {
   var wsSummary = writeSheet('Summary', summaryGrid);
   var wsZone = writeSheet('Active by Zone', zoneActiveGrid);
 
-  if (images['Summary']) {
-    var id1 = workbook.addImage({ base64: images['Summary'], extension: 'png' });
-    wsSummary.addImage(id1, { tl: { col: 3, row: 1 }, ext: { width: 480, height: 280 } }); // ~"D2"
+  // Native, editable single-series charts (data-linked to hidden helper
+  // blocks) replace the two baked PNGs.
+  var placements = [];
+  function s1cPlacement(ws, sheetName, rows, title) {
+    var cats = rows.map(function (r) { return r[0]; });
+    if (!cats.length) return;
+    var blk = window.NativeChartInject.buildDataBlock(ws, sheetName, cats, [
+      { name: 'Count', cache: rows.map(function (r) { return r[1]; }), color: '4472C4' },
+    ], 20);
+    placements.push({
+      sheetName: sheetName, anchor: { fromCol: 3, fromRow: 1, toCol: 12, toRow: 18 }, // ~"D2"
+      def: Object.assign({
+        grouping: 'clustered', legend: false, title: title,
+        axisColor: '000000', dataLabels: { position: 'outEnd', color: '000000' },
+      }, blk),
+    });
   }
-  if (images['Active by Zone']) {
-    var id2 = workbook.addImage({ base64: images['Active by Zone'], extension: 'png' });
-    wsZone.addImage(id2, { tl: { col: 3, row: 1 }, ext: { width: 480, height: 280 } }); // ~"D2"
+  if (window.NativeChartInject && window.fflate) {
+    s1cPlacement(wsSummary, 'Summary', statusRows, 'Assessment Status Overview');
+    s1cPlacement(wsZone, 'Active by Zone', zoneRows, 'Active by Zone');
   }
 
   var buf = await workbook.xlsx.writeBuffer();
+  if (placements.length) {
+    try { buf = window.NativeChartInject.inject(new Uint8Array(buf), placements); }
+    catch (e) { console.error('s1c native chart inject failed:', e); }
+  }
 
   return {
     ok: true,

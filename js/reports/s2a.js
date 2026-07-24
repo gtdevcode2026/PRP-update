@@ -246,16 +246,35 @@ window.Reports.s2a = async function s2a(wb) {
   var ws2 = writeSheet('Auto Open Closed', g2);
   var ws3 = writeSheet(sheetName3, g3);
 
-  if (images['Auto Open Closed']) {
-    var id1 = workbook.addImage({ base64: images['Auto Open Closed'], extension: 'png' });
-    ws2.addImage(id1, { tl: { col: 5, row: 1 }, ext: { width: 560, height: 300 } }); // ~"F2"
+  // Native, editable stacked charts (data-linked to hidden helper blocks)
+  // replace the two baked PNGs. Series: Closed (blue) + Open (orange).
+  var placements = [];
+  function s2aPlacement(ws, sheetName, zoneArr, title) {
+    var zones = zoneArr.map(function (z) { return z.zone; });
+    if (!zones.length) return;
+    var blk = window.NativeChartInject.buildDataBlock(ws, sheetName, zones, [
+      { name: 'Closed', cache: zoneArr.map(function (z) { return z.closed; }), color: '2F75B5' },
+      { name: 'Open', cache: zoneArr.map(function (z) { return z.open; }), color: 'ED7D31' },
+    ], 20);
+    placements.push({
+      sheetName: sheetName, anchor: { fromCol: 5, fromRow: 1, toCol: 15, toRow: 20 }, // ~"F2"
+      def: Object.assign({
+        grouping: 'stacked', legend: true, title: title,
+        axisColor: '000000', dataLabels: { position: 'ctr', color: 'FFFFFF' },
+      }, blk),
+    });
   }
-  if (images[sheetName3]) {
-    var id2 = workbook.addImage({ base64: images[sheetName3], extension: 'png' });
-    ws3.addImage(id2, { tl: { col: 5, row: 1 }, ext: { width: 560, height: 300 } }); // ~"F2"
+  if (window.NativeChartInject && window.fflate) {
+    s2aPlacement(ws2, 'Auto Open Closed', zoneSummary, totalOpen + '/' + totalAll + ' Open Assessment');
+    s2aPlacement(ws3, sheetName3, overdueZone,
+      totalOverdueOpen + '/' + totalOverdue + ' Overdue Open Assessment (' + OVERDUE_THRESHOLD + '+ days)');
   }
 
   var buf = await workbook.xlsx.writeBuffer();
+  if (placements.length) {
+    try { buf = window.NativeChartInject.inject(new Uint8Array(buf), placements); }
+    catch (e) { console.error('s2a native chart inject failed:', e); }
+  }
 
   return {
     ok: true,

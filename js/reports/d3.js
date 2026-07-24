@@ -95,12 +95,32 @@ window.Reports.d3 = async function d3(wb) {
   grid.forEach(function (r) { ws.addRow(r); });
   ws.columns.forEach(function (c) { c.width = 16; });
 
-  if (images['Summary']) {
-    var imgId = workbook.addImage({ base64: images['Summary'], extension: 'png' });
-    ws.addImage(imgId, { tl: { col: 7, row: 4 }, ext: { width: 480, height: 280 } }); // ~"H5"
+  // Native, editable stacked chart (data-linked to a hidden helper block)
+  // replaces the baked PNG. Dynamic series come from the pivot headers.
+  var placements = [];
+  if (window.NativeChartInject && window.fflate && pivot.indexVals.length) {
+    var d3Series = pivot.headers.map(function (colName, idx) {
+      return {
+        name: colName,
+        cache: pivot.rows.map(function (r) { return r[idx]; }),
+        color: (D3_COLORS[colName] || '#4472C4').replace('#', ''),
+      };
+    });
+    var d3Blk = window.NativeChartInject.buildDataBlock(ws, 'Summary', pivot.indexVals, d3Series, 20);
+    placements.push({
+      sheetName: 'Summary', anchor: { fromCol: 7, fromRow: 4, toCol: 16, toRow: 21 }, // ~"H5"
+      def: Object.assign({
+        grouping: 'stacked', legend: true, title: 'Assessments Completed vs Open',
+        axisColor: '000000',
+      }, d3Blk),
+    });
   }
 
   var buf = await workbook.xlsx.writeBuffer();
+  if (placements.length) {
+    try { buf = window.NativeChartInject.inject(new Uint8Array(buf), placements); }
+    catch (e) { console.error('d3 native chart inject failed:', e); }
+  }
 
   return {
     ok: true,

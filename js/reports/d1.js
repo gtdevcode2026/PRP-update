@@ -85,12 +85,29 @@ window.Reports.d1 = async function d1(wb) {
   finalRows.forEach(function (r) { ws.addRow(r); });
   ws.columns.forEach(function (col) { col.width = 20; });
 
-  if (images['Final Table']) {
-    var imgId = workbook.addImage({ base64: images['Final Table'], extension: 'png' });
-    ws.addImage(imgId, { tl: { col: 4, row: 1 }, ext: { width: 480, height: 280 } }); // ~"E2"
+  // Native, editable stacked chart (data-linked to a hidden helper block) in
+  // place of the baked PNG. The preview still uses images['Final Table'].
+  var placements = [];
+  if (window.NativeChartInject && window.fflate && zones.length) {
+    var blk = window.NativeChartInject.buildDataBlock(ws, 'Final Table', zones, [
+      { name: 'Tier-1 Supplier', cache: tier1Vals, color: '1F77B4' },
+      { name: 'Supplier Added by Zone', cache: addedVals, color: 'FF7F0E' },
+    ], 20);
+    placements.push({
+      sheetName: 'Final Table', anchor: { fromCol: 4, fromRow: 1, toCol: 13, toRow: 18 }, // ~"E2"
+      def: Object.assign({
+        grouping: 'stacked', legend: true, title: '(' + tier1Sum + ') Zone wise Tier 1 Suppliers',
+        chartBg: '000000', plotBg: '000000', axisColor: 'FFFFFF',
+        dataLabels: { position: 'ctr', color: 'FFFFFF' },
+      }, blk),
+    });
   }
 
   var buf = await workbook.xlsx.writeBuffer();
+  if (placements.length) {
+    try { buf = window.NativeChartInject.inject(new Uint8Array(buf), placements); }
+    catch (e) { console.error('d1 native chart inject failed:', e); }
+  }
 
   return {
     ok: true,
