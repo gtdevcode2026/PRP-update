@@ -1570,333 +1570,1743 @@ window.CreatePRP = (function () {
   };
 })();
 
+// ── Inlined: native-chart.js ───────────────────────────────────────────────
+// Native OOXML column-chart generator. Pure string builders — no I/O, no zip.
+// Turns a report's chart data (categories, series names/colors/values) into the
+// xl/charts/chartN.xml + xl/drawings/drawingN.xml parts that Excel opens as a
+// real, editable chart. Replaces the baked-PNG (renderStyledPng) embed.
+// Dual-export: browser (window.NativeChart) + Node (module.exports) for tests.
+(function (root) {
+  'use strict';
+
+  var C = 'http://schemas.openxmlformats.org/drawingml/2006/chart';
+  var A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+  var R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  var XDR = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing';
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function strRef(ref, cache) {
+    var pts = cache.map(function (v, i) {
+      return '<c:pt idx="' + i + '"><c:v>' + esc(v) + '</c:v></c:pt>';
+    }).join('');
+    return '<c:strRef><c:f>' + esc(ref) + '</c:f><c:strCache>' +
+      '<c:ptCount val="' + cache.length + '"/>' + pts + '</c:strCache></c:strRef>';
+  }
+
+  function numRef(ref, cache) {
+    var pts = cache.map(function (v, i) {
+      var num = (v === null || v === undefined || v === '') ? 0 : v;
+      return '<c:pt idx="' + i + '"><c:v>' + num + '</c:v></c:pt>';
+    }).join('');
+    return '<c:numRef><c:f>' + esc(ref) + '</c:f><c:numCache>' +
+      '<c:formatCode>General</c:formatCode><c:ptCount val="' + cache.length + '"/>' +
+      pts + '</c:numCache></c:numRef>';
+  }
+
+  function fill(color) {
+    return '<c:spPr><a:solidFill><a:srgbClr val="' + color + '"/></a:solidFill>' +
+      '<a:ln><a:noFill/></a:ln></c:spPr>';
+  }
+
+  function seriesXml(s, idx, cat, dLbls) {
+    var tx = s.name.ref
+      ? '<c:tx>' + strRef(s.name.ref, [s.name.lit]) + '</c:tx>'
+      : '<c:tx><c:v>' + esc(s.name.lit) + '</c:v></c:tx>';
+    var dPts = (s.points || []).map(function (p) {
+      return '<c:dPt><c:idx val="' + p.idx + '"/><c:invertIfNegative val="0"/><c:bubble3D val="0"/>' +
+        fill(p.color) + '</c:dPt>';
+    }).join('');
+    return '<c:ser><c:idx val="' + idx + '"/><c:order val="' + idx + '"/>' +
+      tx + fill(s.color) + '<c:invertIfNegative val="0"/>' + dPts + dLbls +
+      '<c:cat>' + strRef(cat.ref, cat.cache) + '</c:cat>' +
+      '<c:val>' + numRef(s.values.ref, s.values.cache) + '</c:val></c:ser>';
+  }
+
+  function dataLabels(dl) {
+    if (!dl) return '';
+    var numFmt = dl.numFmt ? '<c:numFmt formatCode="' + dl.numFmt + '" sourceLinked="0"/>' : '';
+    var txPr = dl.color
+      ? '<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill>' +
+        '<a:srgbClr val="' + dl.color + '"/></a:solidFill></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>'
+      : '';
+    return '<c:dLbls>' + numFmt + txPr + '<c:dLblPos val="' + dl.position + '"/>' +
+      '<c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/>' +
+      '<c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls>';
+  }
+
+  function axisTxt(color) {
+    if (!color) return '';
+    return '<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill>' +
+      '<a:srgbClr val="' + color + '"/></a:solidFill></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>';
+  }
+
+  function chartXml(def) {
+    var CAT = 111111111, VAL = 222222222;
+    var dl = dataLabels(def.dataLabels);
+    var sers = def.series.map(function (s, i) { return seriesXml(s, i, def.categories, dl); }).join('');
+    var overlap = def.grouping === 'stacked' ? '<c:overlap val="100"/>' : '<c:overlap val="-27"/>';
+    var gap = '<c:gapWidth val="' + (def.grouping === 'stacked' ? 50 : 150) + '"/>';
+    var titleRPr = def.axisColor
+      ? '<a:rPr lang="en-US" b="1"><a:solidFill><a:srgbClr val="' + def.axisColor + '"/></a:solidFill></a:rPr>'
+      : '<a:rPr lang="en-US" b="1"/>';
+    var title = def.title
+      ? '<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r>' + titleRPr + '<a:t>' + esc(def.title) +
+        '</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>'
+      : '<c:autoTitleDeleted val="1"/>';
+    var legend = def.legend
+      ? '<c:legend><c:legendPos val="b"/><c:overlay val="0"/>' + axisTxt(def.axisColor) + '</c:legend>'
+      : '';
+    var chartSpaceFill = def.chartBg
+      ? '<c:spPr><a:solidFill><a:srgbClr val="' + def.chartBg + '"/></a:solidFill></c:spPr>' : '';
+    var plotFill = def.plotBg
+      ? '<c:spPr><a:solidFill><a:srgbClr val="' + def.plotBg + '"/></a:solidFill></c:spPr>'
+      : '<c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr>';
+    // barDir 'col' = vertical columns (default), 'bar' = horizontal bars.
+    // For horizontal bars the category axis sits on the left, value axis below.
+    var barDir = def.barDir || 'col';
+    var catPos = barDir === 'bar' ? 'l' : 'b';
+    var valPos = barDir === 'bar' ? 'b' : 'l';
+    var catOrient = def.catReversed ? 'maxMin' : 'minMax';
+    var valNumFmt = def.valNumFmt ? '<c:numFmt formatCode="' + def.valNumFmt + '" sourceLinked="0"/>' : '';
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<c:chartSpace xmlns:c="' + C + '" xmlns:a="' + A + '" xmlns:r="' + R + '">' +
+      '<c:roundedCorners val="0"/><c:chart>' + title +
+      '<c:plotArea><c:layout/>' +
+      '<c:barChart><c:barDir val="' + barDir + '"/><c:grouping val="' + def.grouping + '"/>' +
+      '<c:varyColors val="0"/>' + sers + gap + overlap +
+      '<c:axId val="' + CAT + '"/><c:axId val="' + VAL + '"/></c:barChart>' +
+      '<c:catAx><c:axId val="' + CAT + '"/><c:scaling><c:orientation val="' + catOrient + '"/></c:scaling>' +
+      '<c:delete val="0"/><c:axPos val="' + catPos + '"/>' + axisTxt(def.axisColor) +
+      '<c:crossAx val="' + VAL + '"/></c:catAx>' +
+      '<c:valAx><c:axId val="' + VAL + '"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+      '<c:delete val="0"/><c:axPos val="' + valPos + '"/><c:majorGridlines/>' + valNumFmt + axisTxt(def.axisColor) +
+      '<c:crossAx val="' + CAT + '"/></c:valAx>' +
+      plotFill + '</c:plotArea>' + legend +
+      '<c:plotVisOnly val="0"/><c:dispBlanksAs val="gap"/></c:chart>' +
+      chartSpaceFill + '</c:chartSpace>';
+  }
+
+  function drawingXml(a, relId) {
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<xdr:wsDr xmlns:xdr="' + XDR + '" xmlns:a="' + A + '" xmlns:r="' + R + '" xmlns:c="' + C + '">' +
+      '<xdr:twoCellAnchor>' +
+      '<xdr:from><xdr:col>' + a.fromCol + '</xdr:col><xdr:colOff>0</xdr:colOff>' +
+      '<xdr:row>' + a.fromRow + '</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>' +
+      '<xdr:to><xdr:col>' + a.toCol + '</xdr:col><xdr:colOff>0</xdr:colOff>' +
+      '<xdr:row>' + a.toRow + '</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>' +
+      '<xdr:graphicFrame macro=""><xdr:nvGraphicFramePr>' +
+      '<xdr:cNvPr id="2" name="Chart 1"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>' +
+      '<xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>' +
+      '<a:graphic><a:graphicData uri="' + C + '"><c:chart xmlns:c="' + C + '" r:id="' + relId + '"/>' +
+      '</a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/>' +
+      '</xdr:twoCellAnchor></xdr:wsDr>';
+  }
+
+  var API = { chartXml: chartXml, drawingXml: drawingXml, _esc: esc };
+  root.NativeChart = API;
+  if (typeof module !== 'undefined' && module.exports) module.exports = API;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+// ── Inlined: native-chart-inject.js ────────────────────────────────────────
+// Injects native OOXML charts into an ExcelJS-produced .xlsx (an OPC zip).
+// Opens the zip with fflate, adds chart/drawing parts, patches
+// [Content_Types].xml, the worksheet .rels, and the sheet's <drawing> element,
+// then re-zips. Sheet display name -> worksheet part is resolved via
+// workbook.xml + its rels (never guessed), so multi-sheet outputs map correctly.
+// Dual-export; depends on global fflate + NativeChart.
+(function (root) {
+  'use strict';
+  var NC = root.NativeChart || (typeof require !== 'undefined' ? require('./native-chart.js') : null);
+
+  function dec(u8) { return new TextDecoder().decode(u8); }
+  function enc(s) { return new TextEncoder().encode(s); }
+
+  // Resolve sheet display name -> worksheet part path (xl/worksheets/sheetN.xml)
+  function sheetPathMap(files) {
+    var wbXml = dec(files['xl/workbook.xml']);
+    var relsXml = dec(files['xl/_rels/workbook.xml.rels']);
+    var relTarget = {};
+    relsXml.replace(/<Relationship\b[^>]*?Id="([^"]+)"[^>]*?Target="([^"]+)"[^>]*?\/?>/g,
+      function (m, id, target) { relTarget[id] = target; return m; });
+    var map = {};
+    wbXml.replace(/<sheet\b[^>]*?name="([^"]+)"[^>]*?r:id="([^"]+)"[^>]*?\/?>/g,
+      function (m, name, rid) {
+        var t = relTarget[rid] || '';
+        map[name] = 'xl/' + t.replace(/^\/?xl\//, '').replace(/^\/+/, '');
+        return m;
+      });
+    return map;
+  }
+
+  function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'); }
+
+  function nextIndex(files, prefix, suffix) {
+    var n = 0;
+    var re = new RegExp('^' + escRe(prefix) + '(\\d+)' + escRe(suffix) + '$');
+    Object.keys(files).forEach(function (p) {
+      var m = p.match(re);
+      if (m) n = Math.max(n, +m[1]);
+    });
+    return n + 1;
+  }
+
+  function ensureSheetRels(files, sheetPath) {
+    var relsPath = sheetPath.replace(/([^\/]+)$/, '_rels/$1.rels');
+    if (!files[relsPath]) {
+      files[relsPath] = enc('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>');
+    }
+    return relsPath;
+  }
+
+  function addRel(files, relsPath, type, target) {
+    var xml = dec(files[relsPath]);
+    var ids = [];
+    xml.replace(/Id="rId(\d+)"/g, function (m, n) { ids.push(+n); return m; });
+    var id = 'rId' + ((ids.length ? Math.max.apply(null, ids) : 0) + 1);
+    var rel = '<Relationship Id="' + id + '" Type="' + type + '" Target="' + target + '"/>';
+    files[relsPath] = enc(xml.replace('</Relationships>', rel + '</Relationships>'));
+    return id;
+  }
+
+  function addContentTypeOverride(files, partName, contentType) {
+    var ct = dec(files['[Content_Types].xml']);
+    if (ct.indexOf('PartName="' + partName + '"') !== -1) return;
+    var o = '<Override PartName="' + partName + '" ContentType="' + contentType + '"/>';
+    files['[Content_Types].xml'] = enc(ct.replace('</Types>', o + '</Types>'));
+  }
+
+  function insertDrawingEl(sheetXml, relId) {
+    var el = '<drawing r:id="' + relId + '"/>';
+    if (!/<worksheet\b[^>]*xmlns:r=/.test(sheetXml)) {
+      sheetXml = sheetXml.replace(/<worksheet\b/,
+        '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"');
+    }
+    // <drawing> must precede these if present, else go before </worksheet>
+    var before = ['<legacyDrawing', '<tableParts', '<extLst', '</worksheet>'];
+    for (var i = 0; i < before.length; i++) {
+      var idx = sheetXml.indexOf(before[i]);
+      if (idx !== -1) return sheetXml.slice(0, idx) + el + sheetXml.slice(idx);
+    }
+    return sheetXml;
+  }
+
+  function inject(bytes, placements) {
+    var u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    var files = root.fflate.unzipSync(u8);
+    var paths = sheetPathMap(files);
+    var drawingForSheet = {}; // sheetPath -> { drawPath, drawRels, anchors:[] }
+
+    placements.forEach(function (pl) {
+      var sheetPath = paths[pl.sheetName];
+      if (!sheetPath) throw new Error('sheet not found: ' + pl.sheetName);
+
+      var dg = drawingForSheet[sheetPath];
+      if (!dg) {
+        var di = nextIndex(files, 'xl/drawings/drawing', '.xml');
+        var drawPath = 'xl/drawings/drawing' + di + '.xml';
+        var drawRels = 'xl/drawings/_rels/drawing' + di + '.xml.rels';
+        // Reserve the drawing part NOW (overwritten at the end) so nextIndex()
+        // sees it when allocating the next sheet's drawing — otherwise a second
+        // sheet reuses drawing1 and its chart rel is clobbered.
+        files[drawPath] = enc('');
+        files[drawRels] = enc('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+          '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>');
+        addContentTypeOverride(files, '/' + drawPath, 'application/vnd.openxmlformats-officedocument.drawing+xml');
+        var sheetRels = ensureSheetRels(files, sheetPath);
+        var drawRelId = addRel(files, sheetRels,
+          'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing',
+          '../drawings/drawing' + di + '.xml');
+        files[sheetPath] = enc(insertDrawingEl(dec(files[sheetPath]), drawRelId));
+        dg = drawingForSheet[sheetPath] = { drawPath: drawPath, drawRels: drawRels, anchors: [] };
+      }
+
+      var ci = nextIndex(files, 'xl/charts/chart', '.xml');
+      var chartPath = 'xl/charts/chart' + ci + '.xml';
+      files[chartPath] = enc(NC.chartXml(pl.def));
+      addContentTypeOverride(files, '/' + chartPath, 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml');
+      var chartRelId = addRel(files, dg.drawRels,
+        'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+        '../charts/chart' + ci + '.xml');
+      dg.anchors.push(NC.drawingXml(pl.anchor, chartRelId));
+    });
+
+    // write each sheet's drawing xml with all its anchors
+    Object.keys(drawingForSheet).forEach(function (sp) {
+      var dg = drawingForSheet[sp];
+      var body = dg.anchors.map(function (a) {
+        return a.replace(/^<\?xml[^>]*\?>/, '').replace(/<\/?xdr:wsDr[^>]*>/g, '');
+      }).join('');
+      files[dg.drawPath] = enc('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" ' +
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ' +
+        'xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">' + body + '</xdr:wsDr>');
+    });
+
+    return root.fflate.zipSync(files);
+  }
+
+  // Writes a chart's categories + series values into hidden, far-right helper
+  // columns on an ExcelJS worksheet and returns the { categories, series }
+  // portion of a chartDef pointing at those cells. Lets a report data-link a
+  // native chart without depending on the visible table's exact column layout.
+  // Charts plot hidden cells because chartXml sets c:plotVisOnly val="0".
+  function colLetter(n) { // 1-based -> A, B, ... AA
+    var s = '';
+    while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - m - 1) / 26); }
+    return s;
+  }
+  function buildDataBlock(ws, sheetName, categories, series, startColOpt) {
+    var startCol = startColOpt || ((ws.columnCount || 0) + 2); // 1-based, leave a gap
+    var n = categories.length;
+    for (var i = 0; i < n; i++) ws.getCell(i + 1, startCol).value = categories[i];
+    ws.getColumn(startCol).hidden = true;
+    var catL = colLetter(startCol);
+    var outSeries = series.map(function (s, si) {
+      var col = startCol + 1 + si;
+      for (var r = 0; r < n; r++) {
+        var v = s.cache[r];
+        ws.getCell(r + 1, col).value = (v === '' || v === null || v === undefined) ? 0 : v;
+      }
+      ws.getColumn(col).hidden = true;
+      var cl = colLetter(col);
+      return {
+        name: { lit: s.name },
+        values: { ref: "'" + sheetName + "'!$" + cl + "$1:$" + cl + "$" + n, cache: s.cache },
+        color: s.color,
+        points: s.points,
+      };
+    });
+    return {
+      categories: { ref: "'" + sheetName + "'!$" + catL + "$1:$" + catL + "$" + n, cache: categories },
+      series: outSeries,
+    };
+  }
+
+  var API = { inject: inject, buildDataBlock: buildDataBlock, _colLetter: colLetter };
+  root.NativeChartInject = API;
+  if (typeof module !== 'undefined' && module.exports) module.exports = API;
+})(typeof window !== 'undefined' ? window : globalThis);
+
 // ── Inlined: reports/d1.js ───────────────────────────────────────────────
 window.Reports.d1 = async function d1(wb) {
-  var E = window.ReportEngine, B = window.ReportBridge;
+  var E = window.ReportEngine;
+  var B = window.ReportBridge;
+
   var sheet = E.readSheet(wb, 'TPRM Web-Portal Export');
+
   function cleanKey(k) { return String(k).trim().toLowerCase().replace(/ /g, '_'); }
-  var rows = sheet.rows.map(function (row) { var out = {}; Object.keys(row).forEach(function (k) { out[cleanKey(k)] = row[k]; }); return out; });
-  var filtered = rows.filter(function (r) { var year = E.excelYear(r.request_date); if (year === null) return false; var cat = E.isBlank(r.category) ? '' : String(r.category).trim().toUpperCase(); return year === 2026 && cat === 'TECHNOLOGY'; });
+  var rows = sheet.rows.map(function (row) {
+    var out = {};
+    Object.keys(row).forEach(function (k) { out[cleanKey(k)] = row[k]; });
+    return out;
+  });
+
+  var filtered = rows.filter(function (r) {
+    var year = E.excelYear(r.request_date);
+    if (year === null) return false;
+    var cat = E.isBlank(r.category) ? '' : String(r.category).trim().toUpperCase();
+    return year === 2026 && cat === 'TECHNOLOGY';
+  });
+
+  // groupby("supplier_zone")["id"].count() — pandas .count() counts non-null values.
   var groups = E.groupBy(filtered, function (r) { return r.supplier_zone; });
   var addedByZone = {};
-  groups.forEach(function (zoneRows, zone) { addedByZone[zone] = zoneRows.filter(function (r) { return !E.isBlank(r.id); }).length; });
-  var TIER1 = [['NAZ',123],['AFR',115],['GHQ',79],['EUR',35],['APAC',17],['SAZ',13],['MAZ',13]];
-  var chartRows = TIER1.map(function (t) { return [t[0], t[1], addedByZone.hasOwnProperty(t[0]) ? addedByZone[t[0]] : 0]; });
+  groups.forEach(function (zoneRows, zone) {
+    addedByZone[zone] = zoneRows.filter(function (r) { return !E.isBlank(r.id); }).length;
+  });
+
+  var TIER1 = [
+    ['NAZ', 123], ['AFR', 115], ['GHQ', 79], ['EUR', 35], ['APAC', 17], ['SAZ', 13], ['MAZ', 13],
+  ];
+  var chartRows = TIER1.map(function (t) {
+    var zone = t[0], tier1Supplier = t[1];
+    var added = addedByZone.hasOwnProperty(zone) ? addedByZone[zone] : 0;
+    return [zone, tier1Supplier, added];
+  });
   var tier1Sum = TIER1.reduce(function (a, t) { return a + t[1]; }, 0);
   var addedSum = chartRows.reduce(function (a, r) { return a + r[2]; }, 0);
   var finalRows = chartRows.concat([['Total', tier1Sum, addedSum]]);
+
   var headers = ['Zone', 'Tier-1 Supplier', 'Supplier Added by Zone'];
   var grid = [headers].concat(finalRows);
+  var files = [{ name: 'PRP_Output.xlsx', sheets: [{ name: 'Final Table', grid: grid }] }];
+
+  // Embedded chart reproduces the original matplotlib style exactly (black
+  // figure, blue/orange stacked bars, white in-bar value labels, bold white
+  // title with the running total) — NOT the light in-page preview theme.
   var zones = chartRows.map(function (r) { return r[0]; });
   var tier1Vals = chartRows.map(function (r) { return r[1]; });
   var addedVals = chartRows.map(function (r) { return r[2]; });
   var d1Traces = [
-    { x: zones, y: tier1Vals, type: 'bar', name: 'Tier-1 Supplier', marker: { color: '#1f77b4' }, text: tier1Vals.map(String), textposition: 'inside', insidetextanchor: 'middle', textangle: 0, textfont: { color: '#ffffff', size: 10 } },
-    { x: zones, y: addedVals, type: 'bar', name: 'Supplier Added by Zone', marker: { color: '#ff7f0e' }, text: addedVals.map(function (v) { return v > 0 ? String(v) : ''; }), textposition: 'inside', insidetextanchor: 'middle', textangle: 0, textfont: { color: '#ffffff', size: 10 } },
+    {
+      x: zones, y: tier1Vals, type: 'bar', name: 'Tier-1 Supplier',
+      marker: { color: '#1f77b4' },
+      text: tier1Vals.map(String), textposition: 'inside', insidetextanchor: 'middle', textangle: 0,
+      textfont: { color: '#ffffff', size: 10 },
+    },
+    {
+      x: zones, y: addedVals, type: 'bar', name: 'Supplier Added by Zone',
+      marker: { color: '#ff7f0e' },
+      text: addedVals.map(function (v) { return v > 0 ? String(v) : ''; }),
+      textposition: 'inside', insidetextanchor: 'middle', textangle: 0,
+      textfont: { color: '#ffffff', size: 10 },
+    },
   ];
-  var d1Layout = { barmode: 'stack', paper_bgcolor: '#000000', plot_bgcolor: '#000000', title: { text: '<b>(' + tier1Sum + ') Zone wise Tier 1 Suppliers</b>', font: { color: '#ffffff', size: 14 } }, xaxis: { tickfont: { color: '#ffffff' }, showline: true, linecolor: '#ffffff', mirror: true }, yaxis: { tickfont: { color: '#ffffff' }, showline: true, linecolor: '#ffffff', mirror: true, showgrid: false }, legend: { bgcolor: '#000000', font: { color: '#ffffff' } }, margin: { t: 60, r: 20, b: 50, l: 50 } };
+  var d1Layout = {
+    barmode: 'stack',
+    paper_bgcolor: '#000000', plot_bgcolor: '#000000',
+    title: { text: '<b>(' + tier1Sum + ') Zone wise Tier 1 Suppliers</b>', font: { color: '#ffffff', size: 14 } },
+    xaxis: { tickfont: { color: '#ffffff' }, showline: true, linecolor: '#ffffff', mirror: true },
+    yaxis: { tickfont: { color: '#ffffff' }, showline: true, linecolor: '#ffffff', mirror: true, showgrid: false },
+    legend: { bgcolor: '#000000', font: { color: '#ffffff' } },
+    margin: { t: 60, r: 20, b: 50, l: 50 },
+  };
   var images = { 'Final Table': await B.renderStyledPng(d1Traces, d1Layout, 700, 420) };
+
   var workbook = new ExcelJS.Workbook();
   var ws = workbook.addWorksheet('Final Table');
-  ws.addRow(headers); finalRows.forEach(function (r) { ws.addRow(r); }); ws.columns.forEach(function (col) { col.width = 20; });
-  if (images['Final Table']) { var imgId = workbook.addImage({ base64: images['Final Table'], extension: 'png' }); ws.addImage(imgId, { tl: { col: 4, row: 1 }, ext: { width: 480, height: 280 } }); }
+  ws.addRow(headers);
+  finalRows.forEach(function (r) { ws.addRow(r); });
+  ws.columns.forEach(function (col) { col.width = 20; });
+
+  // Native, editable stacked chart (data-linked to a hidden helper block) in
+  // place of the baked PNG. The preview still uses images['Final Table'].
+  var placements = [];
+  if (window.NativeChartInject && window.fflate && zones.length) {
+    var blk = window.NativeChartInject.buildDataBlock(ws, 'Final Table', zones, [
+      { name: 'Tier-1 Supplier', cache: tier1Vals, color: '1F77B4' },
+      { name: 'Supplier Added by Zone', cache: addedVals, color: 'FF7F0E' },
+    ], 20);
+    placements.push({
+      sheetName: 'Final Table', anchor: { fromCol: 4, fromRow: 1, toCol: 13, toRow: 18 }, // ~"E2"
+      def: Object.assign({
+        grouping: 'stacked', legend: true, title: '(' + tier1Sum + ') Zone wise Tier 1 Suppliers',
+        chartBg: '000000', plotBg: '000000', axisColor: 'FFFFFF',
+        dataLabels: { position: 'ctr', color: 'FFFFFF' },
+      }, blk),
+    });
+  }
+
   var buf = await workbook.xlsx.writeBuffer();
-  return { ok: true, files: [{ name: 'PRP_Output.xlsx', bytes: buf, sheets: [{ name: 'Final Table', grid: grid }] }], chartImages: images };
+  if (placements.length) {
+    try { buf = window.NativeChartInject.inject(new Uint8Array(buf), placements); }
+    catch (e) { console.error('d1 native chart inject failed:', e); }
+  }
+
+  return {
+    ok: true,
+    files: [{ name: 'PRP_Output.xlsx', bytes: buf, sheets: [{ name: 'Final Table', grid: grid }] }],
+    chartImages: images,
+  };
 };
 
 // ── Inlined: reports/d2.js ───────────────────────────────────────────────
 window.Reports.d2 = async function d2(wb) {
-  var E = window.ReportEngine, B = window.ReportBridge;
+  var E = window.ReportEngine;
+  var B = window.ReportBridge;
+
   var sheet = E.readSheet(wb, 'OneTrust Assessment');
   var rawHeaders = sheet.headers.map(function (h) { return String(h).trim(); });
-  var rows = sheet.rows.map(function (row) { var out = {}; sheet.headers.forEach(function (h, i) { out[rawHeaders[i]] = row[h]; }); return out; });
-  ['ID','Organization','Stage','Date created','Tags'].forEach(function (c) { if (rawHeaders.indexOf(c) === -1) throw new Error('Missing required columns: ' + c); });
-  rows.forEach(function (r) { ['Organization','Stage','Tags'].forEach(function (c) { r[c] = E.isBlank(r[c]) ? '' : String(r[c]).trim(); }); });
-  var filtered = rows.filter(function (r) { return /^cyber$/i.test(r.Tags) && E.excelYear(r['Date created']) === 2026; });
+  var rows = sheet.rows.map(function (row) {
+    var out = {};
+    sheet.headers.forEach(function (h, i) { out[rawHeaders[i]] = row[h]; });
+    return out;
+  });
+  ['ID', 'Organization', 'Stage', 'Date created', 'Tags'].forEach(function (c) {
+    if (rawHeaders.indexOf(c) === -1) throw new Error('Missing required columns: ' + c);
+  });
+
+  rows.forEach(function (r) {
+    ['Organization', 'Stage', 'Tags'].forEach(function (c) {
+      r[c] = E.isBlank(r[c]) ? '' : String(r[c]).trim();
+    });
+  });
+
+  var filtered = rows.filter(function (r) {
+    var tagMatch = /^cyber$/i.test(r.Tags);
+    var year = E.excelYear(r['Date created']);
+    return tagMatch && year === 2026;
+  });
+
   var CLOSED_STAGES = { 'Completed': 1, 'Under review': 1 };
-  filtered.forEach(function (r) { r['Final Stage'] = CLOSED_STAGES.hasOwnProperty(r.Stage) ? 'Closed' : 'Open'; });
-  var ORG_MAP = { 'Africa': 'AFR', 'APAC': 'APAC', 'BEES': 'GRO', 'BEES | FINTECH': 'GRO', 'Europe': 'Europe', 'GHQ': 'GHQ', 'South America Zone': 'SAZ', 'North America Zone': 'NAZ', 'Middle America Zone': 'MAZ' };
+  filtered.forEach(function (r) {
+    r['Final Stage'] = CLOSED_STAGES.hasOwnProperty(r.Stage) ? 'Closed' : 'Open';
+  });
+
+  var ORG_MAP = {
+    'Africa': 'AFR', 'APAC': 'APAC', 'BEES': 'GRO', 'BEES | FINTECH': 'GRO',
+    'Europe': 'Europe', 'GHQ': 'GHQ', 'South America Zone': 'SAZ',
+    'North America Zone': 'NAZ', 'Middle America Zone': 'MAZ',
+  };
   filtered.forEach(function (r) { r['Org Display'] = E.mapZone(r.Organization, ORG_MAP); });
+
   var pivotRaw = E.pivotCount(filtered, function (r) { return r['Org Display']; }, function (r) { return r['Final Stage']; }, { margins: false });
-  var headers = pivotRaw.headers.slice(), dataRows = pivotRaw.rows.map(function (r) { return r.slice(); });
-  ['Open','Closed'].forEach(function (col) { if (headers.indexOf(col) === -1) { headers.push(col); dataRows.forEach(function (r) { r.push(0); }); } });
+  var headers = pivotRaw.headers.slice();
+  var dataRows = pivotRaw.rows.map(function (r) { return r.slice(); });
+  ['Open', 'Closed'].forEach(function (col) {
+    if (headers.indexOf(col) === -1) { headers.push(col); dataRows.forEach(function (r) { r.push(0); }); }
+  });
   var openIdx = headers.indexOf('Open'), closedIdx = headers.indexOf('Closed');
-  var pivotRows = pivotRaw.indexVals.map(function (iv, i) { var open = dataRows[i][openIdx]||0, closed = dataRows[i][closedIdx]||0; return { label: iv, open: open, closed: closed, grandTotal: open+closed }; });
-  var ORDER = ['AFR','APAC','GRO','Europe','GHQ','SAZ','MAZ','NAZ'];
+  var pivotRows = pivotRaw.indexVals.map(function (iv, i) {
+    var open = dataRows[i][openIdx] || 0, closed = dataRows[i][closedIdx] || 0;
+    return { label: iv, open: open, closed: closed, grandTotal: open + closed };
+  });
+
+  var ORDER = ['AFR', 'APAC', 'GRO', 'Europe', 'GHQ', 'SAZ', 'MAZ', 'NAZ'];
   pivotRows.forEach(function (r) { r.sortOrder = ORDER.indexOf(r.label); if (r.sortOrder === -1) r.sortOrder = 999; });
-  pivotRows.sort(function (a, b) { return a.sortOrder !== b.sortOrder ? a.sortOrder - b.sortOrder : (a.label < b.label ? -1 : a.label > b.label ? 1 : 0); });
-  var totalOpen = pivotRows.reduce(function (a,r){return a+r.open;},0), totalClosed = pivotRows.reduce(function(a,r){return a+r.closed;},0), totalGrand = pivotRows.reduce(function(a,r){return a+r.grandTotal;},0);
+  pivotRows.sort(function (a, b) {
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    return a.label < b.label ? -1 : (a.label > b.label ? 1 : 0);
+  });
+
+  var totalOpen = pivotRows.reduce(function (a, r) { return a + r.open; }, 0);
+  var totalClosed = pivotRows.reduce(function (a, r) { return a + r.closed; }, 0);
+  var totalGrand = pivotRows.reduce(function (a, r) { return a + r.grandTotal; }, 0);
   var pivotDisplay = pivotRows.concat([{ label: 'Grand Total', open: totalOpen, closed: totalClosed, grandTotal: totalGrand }]);
-  var closedTotal = filtered.filter(function(r){return r['Final Stage']==='Closed';}).length, recordTotal = filtered.length;
-  var q2_26 = recordTotal ? Math.round((closedTotal/recordTotal)*100)/100 : 0;
-  var KPI = [["Baseline '25",0.60,'static'],["Q1 '26",0.32,'static'],["Q2 '26",q2_26,''],["Target '26",0.65,'static']];
-  function setCell(grid,row1,col1,value){var r=row1-1,c=col1-1;while(grid.length<=r)grid.push([]);while(grid[r].length<=c)grid[r].push(null);grid[r][c]=value;}
-  var grid=[];
-  setCell(grid,1,1,'Tags');setCell(grid,1,2,'Cyber');setCell(grid,2,1,'Date created');setCell(grid,2,2,'2026');
-  var startRow=4;
-  ['Row Labels','Open','Closed','Grand Total'].forEach(function(h,i){setCell(grid,startRow,i+1,h);});
-  pivotDisplay.forEach(function(r,i){var rowNum=startRow+1+i;setCell(grid,rowNum,1,r.label);setCell(grid,rowNum,2,r.open);setCell(grid,rowNum,3,r.closed);setCell(grid,rowNum,4,r.grandTotal);});
-  var kpiStartRow=startRow+pivotDisplay.length+5;
-  ['Metric','Value','Remark'].forEach(function(h,i){setCell(grid,kpiStartRow,i+1,h);});
-  KPI.forEach(function(k,i){var rowNum=kpiStartRow+1+i;setCell(grid,rowNum,1,k[0]);setCell(grid,rowNum,2,k[1]);setCell(grid,rowNum,3,k[2]);});
-  var noteRow=kpiStartRow+KPI.length+2;setCell(grid,noteRow,1,'Q2 formula');setCell(grid,noteRow,2,'Closed / Grand Total = '+closedTotal+' / '+recordTotal);
-  var images={};
-  var orgLabels=pivotRows.map(function(r){return r.label;}),openVals=pivotRows.map(function(r){return r.open;}),closedVals=pivotRows.map(function(r){return r.closed;});
-  var orgTraces=[
-    {x:orgLabels,y:openVals,type:'bar',name:'Open',marker:{color:'#00AEEF'},width:0.48,text:openVals.map(function(v){return v>0?String(v):''}),textposition:'inside',insidetextanchor:'middle',textfont:{color:'#ffffff',size:10}},
-    {x:orgLabels,y:closedVals,type:'bar',name:'Closed',marker:{color:'#D4AF37'},width:0.48,text:closedVals.map(function(v){return v>0?String(v):''}),textposition:'inside',insidetextanchor:'middle',textfont:{color:'#ffffff',size:10}},
+
+  var closedTotal = filtered.filter(function (r) { return r['Final Stage'] === 'Closed'; }).length;
+  var recordTotal = filtered.length;
+  var q2_26 = recordTotal ? Math.round((closedTotal / recordTotal) * 100) / 100 : 0;
+  var KPI = [
+    ["Baseline '25", 0.60, 'static'],
+    ["Q1 '26", 0.32, 'static'],
+    ["Q2 '26", q2_26, ''],
+    ["Target '26", 0.65, 'static'],
   ];
-  var orgLayout={barmode:'stack',paper_bgcolor:'#000000',plot_bgcolor:'#000000',title:{text:'<b>2026 Assessment<br>('+closedTotal+'/'+recordTotal+')</b>',font:{color:'#ffffff',size:16}},xaxis:{tickangle:-45,tickfont:{color:'#ffffff'},showline:true,linecolor:'#ffffff'},yaxis:{visible:false},legend:{orientation:'h',x:0.5,xanchor:'center',y:0.98,yanchor:'top',traceorder:'reversed',font:{color:'#ffffff'},bgcolor:'rgba(0,0,0,0)'},margin:{t:90,r:20,b:90,l:20}};
-  images.org=await B.renderStyledPng(orgTraces,orgLayout,560,400);
-  var kpiMetrics=KPI.map(function(k){return k[0];}),kpiValues=KPI.map(function(k){return k[1];});
-  var kpiTraces=[{x:kpiValues,y:kpiMetrics,type:'bar',orientation:'h',marker:{color:'#4472C4'},text:kpiValues.map(function(v){return Math.round(v*100)+'%';}),textposition:'outside',textfont:{color:'#000000',size:11}}];
-  var kpiLayout={paper_bgcolor:'#ffffff',plot_bgcolor:'#ffffff',title:{text:'<b>Improve in Supplier Response Time</b>',font:{color:'#000000',size:15}},xaxis:{range:[0,1],tickvals:[0,0.25,0.5,0.75,1],ticktext:['0%','25%','50%','75%','100%'],gridcolor:'rgba(0,0,0,0.35)',griddash:'dash'},yaxis:{autorange:'reversed'},showlegend:false,margin:{t:50,r:40,b:40,l:90}};
-  images.kpi=await B.renderStyledPng(kpiTraces,kpiLayout,560,300);
-  var workbook=new ExcelJS.Workbook(),ws=workbook.addWorksheet('Dashboard');
-  grid.forEach(function(r){ws.addRow(r);}); ws.columns.forEach(function(c){c.width=16;});
-  if(images.org){var id1=workbook.addImage({base64:images.org,extension:'png'});ws.addImage(id1,{tl:{col:5,row:1},ext:{width:480,height:300}});}
-  if(images.kpi){var id2=workbook.addImage({base64:images.kpi,extension:'png'});ws.addImage(id2,{tl:{col:5,row:22},ext:{width:480,height:260}});}
-  var buf=await workbook.xlsx.writeBuffer();
-  return {ok:true,files:[{name:'output file D2.xlsx',bytes:buf,sheets:[{name:'Dashboard',grid:grid}]}],chartImages:{'Dashboard':images.org}};
+
+  function setCell(grid, row1, col1, value) {
+    var r = row1 - 1, c = col1 - 1;
+    while (grid.length <= r) grid.push([]);
+    while (grid[r].length <= c) grid[r].push(null);
+    grid[r][c] = value;
+  }
+
+  var grid = [];
+  setCell(grid, 1, 1, 'Tags'); setCell(grid, 1, 2, 'Cyber');
+  setCell(grid, 2, 1, 'Date created'); setCell(grid, 2, 2, '2026');
+
+  var startRow = 4;
+  var pivotHeaderRow = ['Row Labels', 'Open', 'Closed', 'Grand Total'];
+  pivotHeaderRow.forEach(function (h, i) { setCell(grid, startRow, i + 1, h); });
+  pivotDisplay.forEach(function (r, i) {
+    var rowNum = startRow + 1 + i;
+    setCell(grid, rowNum, 1, r.label);
+    setCell(grid, rowNum, 2, r.open);
+    setCell(grid, rowNum, 3, r.closed);
+    setCell(grid, rowNum, 4, r.grandTotal);
+  });
+
+  var kpiStartRow = startRow + pivotDisplay.length + 5;
+  ['Metric', 'Value', 'Remark'].forEach(function (h, i) { setCell(grid, kpiStartRow, i + 1, h); });
+  KPI.forEach(function (k, i) {
+    var rowNum = kpiStartRow + 1 + i;
+    setCell(grid, rowNum, 1, k[0]);
+    setCell(grid, rowNum, 2, k[1]);
+    setCell(grid, rowNum, 3, k[2]);
+  });
+  var noteRow = kpiStartRow + KPI.length + 2;
+  setCell(grid, noteRow, 1, 'Q2 formula');
+  setCell(grid, noteRow, 2, 'Closed / Grand Total = ' + closedTotal + ' / ' + recordTotal);
+
+  var files = [{ name: 'output file D2.xlsx', sheets: [{ name: 'Dashboard', grid: grid }] }];
+
+  // Both embedded charts reproduce the original matplotlib styles instead
+  // of the light in-page preview theme. Both are embedded into the file
+  // (matching today's 2-chart output), even though only the KPI chart ever
+  // surfaces in the preview — confirmed with the user.
+  var images = {};
+
+  // Chart 1: org-level stacked bar — black bg, Open (cyan) bottom + Closed
+  // (gold) top, white in-bar labels, rotated white x labels, hidden y axis,
+  // top-center legend (Closed shown before Open, matching legend_order).
+  var orgLabels = pivotRows.map(function (r) { return r.label; });
+  var openVals = pivotRows.map(function (r) { return r.open; });
+  var closedVals = pivotRows.map(function (r) { return r.closed; });
+  var orgTraces = [
+    { x: orgLabels, y: openVals, type: 'bar', name: 'Open', marker: { color: '#00AEEF' }, width: 0.48,
+      text: openVals.map(function (v) { return v > 0 ? String(v) : ''; }),
+      textposition: 'inside', insidetextanchor: 'middle', textfont: { color: '#ffffff', size: 10 } },
+    { x: orgLabels, y: closedVals, type: 'bar', name: 'Closed', marker: { color: '#D4AF37' }, width: 0.48,
+      text: closedVals.map(function (v) { return v > 0 ? String(v) : ''; }),
+      textposition: 'inside', insidetextanchor: 'middle', textfont: { color: '#ffffff', size: 10 } },
+  ];
+  var orgLayout = {
+    barmode: 'stack',
+    paper_bgcolor: '#000000', plot_bgcolor: '#000000',
+    title: { text: '<b>2026 Assessment<br>(' + closedTotal + '/' + recordTotal + ')</b>', font: { color: '#ffffff', size: 16 } },
+    xaxis: { tickangle: -45, tickfont: { color: '#ffffff' }, showline: true, linecolor: '#ffffff' },
+    yaxis: { visible: false },
+    legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: 0.98, yanchor: 'top', traceorder: 'reversed',
+      font: { color: '#ffffff' }, bgcolor: 'rgba(0,0,0,0)' },
+    margin: { t: 90, r: 20, b: 90, l: 20 },
+  };
+  images.org = await B.renderStyledPng(orgTraces, orgLayout, 560, 400);
+
+  // Chart 2: KPI horizontal bar — white bg, single blue series, 0-100% axis,
+  // percent value labels to the right of each bar, dashed x gridlines.
+  var kpiMetrics = KPI.map(function (k) { return k[0]; });
+  var kpiValues = KPI.map(function (k) { return k[1]; });
+  var kpiTraces = [
+    { x: kpiValues, y: kpiMetrics, type: 'bar', orientation: 'h', marker: { color: '#4472C4' },
+      text: kpiValues.map(function (v) { return Math.round(v * 100) + '%'; }),
+      textposition: 'outside', textfont: { color: '#000000', size: 11 } },
+  ];
+  var kpiLayout = {
+    paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
+    title: { text: '<b>Improve in Supplier Response Time</b>', font: { color: '#000000', size: 15 } },
+    xaxis: { range: [0, 1], tickvals: [0, 0.25, 0.5, 0.75, 1], ticktext: ['0%', '25%', '50%', '75%', '100%'],
+      gridcolor: 'rgba(0,0,0,0.35)', griddash: 'dash' },
+    yaxis: { autorange: 'reversed' },
+    showlegend: false,
+    margin: { t: 50, r: 40, b: 40, l: 90 },
+  };
+  images.kpi = await B.renderStyledPng(kpiTraces, kpiLayout, 560, 300);
+
+  var workbook = new ExcelJS.Workbook();
+  var ws = workbook.addWorksheet('Dashboard');
+  grid.forEach(function (r) { ws.addRow(r); });
+  ws.columns.forEach(function (c) { c.width = 16; });
+
+  // Native, editable charts (data-linked to hidden helper blocks) replace the
+  // two baked PNGs: org = stacked column, kpi = horizontal percent bar.
+  var placements = [];
+  if (window.NativeChartInject && window.fflate) {
+    if (orgLabels.length) {
+      var orgBlk = window.NativeChartInject.buildDataBlock(ws, 'Dashboard', orgLabels, [
+        { name: 'Open', cache: openVals, color: '00AEEF' },
+        { name: 'Closed', cache: closedVals, color: 'D4AF37' },
+      ], 20);
+      placements.push({
+        sheetName: 'Dashboard', anchor: { fromCol: 5, fromRow: 1, toCol: 14, toRow: 20 }, // ~"F2"
+        def: Object.assign({
+          grouping: 'stacked', legend: true, title: '2026 Assessment (' + closedTotal + '/' + recordTotal + ')',
+          chartBg: '000000', plotBg: '000000', axisColor: 'FFFFFF',
+          dataLabels: { position: 'ctr', color: 'FFFFFF' },
+        }, orgBlk),
+      });
+    }
+    if (kpiMetrics.length) {
+      var kpiBlk = window.NativeChartInject.buildDataBlock(ws, 'Dashboard', kpiMetrics, [
+        { name: 'Improvement', cache: kpiValues, color: '4472C4' },
+      ], 27);
+      placements.push({
+        sheetName: 'Dashboard', anchor: { fromCol: 5, fromRow: 22, toCol: 14, toRow: 40 }, // ~"F23"
+        def: Object.assign({
+          grouping: 'clustered', barDir: 'bar', catReversed: true, legend: false,
+          title: 'Improve in Supplier Response Time', valNumFmt: '0%',
+          dataLabels: { position: 'outEnd', numFmt: '0%', color: '000000' },
+        }, kpiBlk),
+      });
+    }
+  }
+
+  var buf = await workbook.xlsx.writeBuffer();
+  if (placements.length) {
+    try { buf = window.NativeChartInject.inject(new Uint8Array(buf), placements); }
+    catch (e) { console.error('d2 native chart inject failed:', e); }
+  }
+
+  return {
+    ok: true,
+    files: [{ name: 'output file D2.xlsx', bytes: buf, sheets: [{ name: 'Dashboard', grid: grid }] }],
+    chartImages: { 'Dashboard': images.org },
+  };
 };
 
 // ── Inlined: reports/d3.js ───────────────────────────────────────────────
 window.Reports.d3 = async function d3(wb) {
-  var E = window.ReportEngine, B = window.ReportBridge;
+  var E = window.ReportEngine;
+  var B = window.ReportBridge;
+
   var sheet = E.readSheet(wb, 'OneTrust Assessment');
-  var rawHeaders = sheet.headers, trimmedHeaders = rawHeaders.map(function(h){return String(h).trim();});
-  var rows = sheet.rows.map(function(row){var out={};rawHeaders.forEach(function(h,i){out[trimmedHeaders[i]]=row[h];});return out;});
-  function findCol(substr){for(var i=0;i<trimmedHeaders.length;i++){if(trimmedHeaders[i].indexOf(substr)!==-1)return trimmedHeaders[i];}throw new Error('Column containing "'+substr+'" not found');}
-  var orgCol=findCol('Organization'),w1Col=findCol('Working1'),w2Col=findCol('Working2');
-  var filtered=rows.filter(function(r){return r[w2Col]==='Beyond 1 Year Overdue'&&(r[w1Col]==='Pending'||r[w1Col]==='Completed in 2026');});
-  var pivot=E.pivotCount(filtered,function(r){return String(r[orgCol]);},function(r){return String(r[w1Col]);},{margins:false});
-  var headers=pivot.headers.concat(['Grand Total']);
-  var dataRows=pivot.rows.map(function(r){var sum=r.reduce(function(a,b){return a+b;},0);return r.concat([sum]);});
-  var totalsRow=headers.map(function(_,c){return dataRows.reduce(function(acc,r){return acc+r[c];},0);});
-  var indexVals=pivot.indexVals.concat(['Grand Total']); dataRows.push(totalsRow);
-  var headerRow=[orgCol].concat(headers),gridRows=indexVals.map(function(iv,i){return [iv].concat(dataRows[i]);});
-  var grid=[headerRow].concat(gridRows);
-  var D3_COLORS={'Completed in 2026':'#FF0000','Pending':'#FFC000'};
-  var images={};
-  if(pivot.indexVals.length){
-    var d3Traces=pivot.headers.map(function(colName,idx){return{x:pivot.indexVals,y:pivot.rows.map(function(r){return r[idx];}),type:'bar',name:colName,marker:{color:D3_COLORS[colName]||'#4472C4'}};});
-    var d3Layout={barmode:'stack',paper_bgcolor:'#ffffff',plot_bgcolor:'#ffffff',title:{text:'Assessments Completed vs Open',font:{color:'#000000',size:13}},xaxis:{title:'Region',tickfont:{color:'#000000'}},yaxis:{title:'Count',gridcolor:'#D9D9D9'},legend:{font:{color:'#000000'}},margin:{t:50,r:20,b:60,l:50}};
-    images['Summary']=await B.renderStyledPng(d3Traces,d3Layout,480,280);
+  var rawHeaders = sheet.headers;
+  var trimmedHeaders = rawHeaders.map(function (h) { return String(h).trim(); });
+  var rows = sheet.rows.map(function (row) {
+    var out = {};
+    rawHeaders.forEach(function (h, i) { out[trimmedHeaders[i]] = row[h]; });
+    return out;
+  });
+
+  function findCol(substr) {
+    for (var i = 0; i < trimmedHeaders.length; i++) {
+      if (trimmedHeaders[i].indexOf(substr) !== -1) return trimmedHeaders[i];
+    }
+    throw new Error('Column containing "' + substr + '" not found');
   }
-  var workbook=new ExcelJS.Workbook(),ws=workbook.addWorksheet('Summary');
-  grid.forEach(function(r){ws.addRow(r);}); ws.columns.forEach(function(c){c.width=16;});
-  if(images['Summary']){var imgId=workbook.addImage({base64:images['Summary'],extension:'png'});ws.addImage(imgId,{tl:{col:7,row:4},ext:{width:480,height:280}});}
-  var buf=await workbook.xlsx.writeBuffer();
-  return {ok:true,files:[{name:'output.xlsx',bytes:buf,sheets:[{name:'Summary',grid:grid}]}],chartImages:images};
+  var orgCol = findCol('Organization');
+  var w1Col = findCol('Working1');
+  var w2Col = findCol('Working2');
+  // stage_col/classify_stage only feed "Final Status", which is used purely
+  // as the pivot's *value* column for counting — its actual text (Completed/
+  // Open) never appears in the output, so it needn't be computed here.
+
+  var filtered = rows.filter(function (r) {
+    return r[w2Col] === 'Beyond 1 Year Overdue' && (r[w1Col] === 'Pending' || r[w1Col] === 'Completed in 2026');
+  });
+
+  var pivot = E.pivotCount(
+    filtered,
+    function (r) { return String(r[orgCol]); },
+    function (r) { return String(r[w1Col]); },
+    { margins: false }
+  );
+
+  // Manual two-step Grand Total (matches `pivot["Grand Total"]=sum(axis=1)`
+  // then `pivot.loc["Grand Total"]=sum()` — column first, then row over the
+  // now-wider matrix).
+  var headers = pivot.headers.concat(['Grand Total']);
+  var dataRows = pivot.rows.map(function (r) {
+    var sum = r.reduce(function (a, b) { return a + b; }, 0);
+    return r.concat([sum]);
+  });
+  var totalsRow = headers.map(function (_, c) {
+    return dataRows.reduce(function (acc, r) { return acc + r[c]; }, 0);
+  });
+  var indexVals = pivot.indexVals.concat(['Grand Total']);
+  dataRows.push(totalsRow);
+
+  var headerRow = [orgCol].concat(headers);
+  var gridRows = indexVals.map(function (iv, i) { return [iv].concat(dataRows[i]); });
+  var grid = [headerRow].concat(gridRows);
+
+  var files = [{ name: 'output.xlsx', sheets: [{ name: 'Summary', grid: grid }] }];
+
+  // Embedded chart reproduces the original openpyxl native stacked BarChart
+  // (white background, "Completed in 2026"=red / "Pending"=orange, no data
+  // labels, axis titles) — built from the pivot BEFORE the Grand Total
+  // column/row were appended, matching the original's Reference(min_col=2,
+  // max_col=3, max_row=ws.max_row-1) which excludes both.
+  var D3_COLORS = { 'Completed in 2026': '#FF0000', 'Pending': '#FFC000' };
+  var images = {};
+  if (pivot.indexVals.length) {
+    var d3Traces = pivot.headers.map(function (colName, idx) {
+      return {
+        x: pivot.indexVals, y: pivot.rows.map(function (r) { return r[idx]; }),
+        type: 'bar', name: colName, marker: { color: D3_COLORS[colName] || '#4472C4' },
+      };
+    });
+    var d3Layout = {
+      barmode: 'stack',
+      paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
+      title: { text: 'Assessments Completed vs Open', font: { color: '#000000', size: 13 } },
+      xaxis: { title: 'Region', tickfont: { color: '#000000' } },
+      yaxis: { title: 'Count', gridcolor: '#D9D9D9' },
+      legend: { font: { color: '#000000' } },
+      margin: { t: 50, r: 20, b: 60, l: 50 },
+    };
+    images['Summary'] = await B.renderStyledPng(d3Traces, d3Layout, 480, 280);
+  }
+
+  var workbook = new ExcelJS.Workbook();
+  var ws = workbook.addWorksheet('Summary');
+  grid.forEach(function (r) { ws.addRow(r); });
+  ws.columns.forEach(function (c) { c.width = 16; });
+
+  // Native, editable stacked chart (data-linked to a hidden helper block)
+  // replaces the baked PNG. Dynamic series come from the pivot headers.
+  var placements = [];
+  if (window.NativeChartInject && window.fflate && pivot.indexVals.length) {
+    var d3Series = pivot.headers.map(function (colName, idx) {
+      return {
+        name: colName,
+        cache: pivot.rows.map(function (r) { return r[idx]; }),
+        color: (D3_COLORS[colName] || '#4472C4').replace('#', ''),
+      };
+    });
+    var d3Blk = window.NativeChartInject.buildDataBlock(ws, 'Summary', pivot.indexVals, d3Series, 20);
+    placements.push({
+      sheetName: 'Summary', anchor: { fromCol: 7, fromRow: 4, toCol: 16, toRow: 21 }, // ~"H5"
+      def: Object.assign({
+        grouping: 'stacked', legend: true, title: 'Assessments Completed vs Open',
+        axisColor: '000000',
+      }, d3Blk),
+    });
+  }
+
+  var buf = await workbook.xlsx.writeBuffer();
+  if (placements.length) {
+    try { buf = window.NativeChartInject.inject(new Uint8Array(buf), placements); }
+    catch (e) { console.error('d3 native chart inject failed:', e); }
+  }
+
+  return {
+    ok: true,
+    files: [{ name: 'output.xlsx', bytes: buf, sheets: [{ name: 'Summary', grid: grid }] }],
+    chartImages: images,
+  };
 };
 
 // ── Inlined: reports/s1c.js ──────────────────────────────────────────────
 window.Reports.s1c = async function s1c(wb) {
-  var E = window.ReportEngine, B = window.ReportBridge;
+  var E = window.ReportEngine;
+  var B = window.ReportBridge;
+
   var sheet = E.readSheet(wb, 'TPRM Web-Portal Export');
-  function cleanKey(k){return String(k).trim().toLowerCase();}
-  var rows=sheet.rows.map(function(row){var out={};Object.keys(row).forEach(function(k){out[cleanKey(k)]=row[k];});return out;});
-  var pivot=E.pivotCount(rows,function(r){return String(r.zone_assessing);},function(r){return String(r.assessment_status);},{margins:true,marginsName:'Grand Total'});
-  var headers=pivot.headers.slice(),dataRows=pivot.rows.map(function(r){return r.slice();});
-  ['ACTIVE','Active','Deprioritized','Duplicate'].forEach(function(col){if(headers.indexOf(col)===-1){headers.push(col);dataRows.forEach(function(r){r.push(0);});}});
-  var activeUpperIdx=headers.indexOf('ACTIVE'),activeIdx=headers.indexOf('Active');
-  headers.push('Active_Total'); dataRows.forEach(function(r){var a1=activeUpperIdx>=0?(r[activeUpperIdx]||0):0,a2=activeIdx>=0?(r[activeIdx]||0):0;r.push(a1+a2);});
-  var pivotHeaderRow=['Zone'].concat(headers),pivotOutRows=pivot.indexVals.map(function(iv,i){return[iv].concat(dataRows[i]);});
-  var pivotOutGrid=[pivotHeaderRow].concat(pivotOutRows);
-  var grandIdx=pivot.indexVals.indexOf('Grand Total'),grandRow=dataRows[grandIdx];
-  var activeTotalIdx=headers.indexOf('Active_Total'),deprioritizedIdx=headers.indexOf('Deprioritized'),duplicateIdx=headers.indexOf('Duplicate');
-  var summaryGrid=[['Status','Count'],['Active',grandRow[activeTotalIdx]],['Deprioritized',grandRow[deprioritizedIdx]],['Duplicate',grandRow[duplicateIdx]]];
-  var zoneActiveGrid=[['Zone','Active']].concat(pivot.indexVals.map(function(iv,i){return[iv,dataRows[i][activeTotalIdx]];}).filter(function(pair){return pair[0]!=='Grand Total';}));
-  function excelBarChart(categories,values,title,xTitle,yTitle){return{traces:[{x:categories,y:values,type:'bar',marker:{color:'#4472C4'},text:values.map(String),textposition:'outside',textfont:{color:'#000000',size:10}}],layout:{paper_bgcolor:'#ffffff',plot_bgcolor:'#ffffff',title:{text:title,font:{color:'#000000',size:13}},xaxis:{title:xTitle,tickfont:{color:'#000000'},linecolor:'#808080',showline:true},yaxis:{title:yTitle,tickfont:{color:'#000000'},gridcolor:'#D9D9D9',zerolinecolor:'#808080'},showlegend:false,margin:{t:50,r:20,b:50,l:50}}};}
-  var statusRows=summaryGrid.slice(1),zoneRows=zoneActiveGrid.slice(1);
-  var chart1=excelBarChart(statusRows.map(function(r){return r[0];}),statusRows.map(function(r){return r[1];}),'Assessment Status Overview','Assessment Status','Count');
-  var chart2=excelBarChart(zoneRows.map(function(r){return r[0];}),zoneRows.map(function(r){return r[1];}),'Active by Zone','Zone','Count');
-  var images={'Summary':await B.renderStyledPng(chart1.traces,chart1.layout,480,280),'Active by Zone':await B.renderStyledPng(chart2.traces,chart2.layout,480,280)};
-  var workbook=new ExcelJS.Workbook();
-  function writeSheet(name,grid){var ws=workbook.addWorksheet(name);grid.forEach(function(r){ws.addRow(r);});ws.columns.forEach(function(c){c.width=16;});return ws;}
-  writeSheet('Pivot',pivotOutGrid); var wsSummary=writeSheet('Summary',summaryGrid),wsZone=writeSheet('Active by Zone',zoneActiveGrid);
-  if(images['Summary']){var id1=workbook.addImage({base64:images['Summary'],extension:'png'});wsSummary.addImage(id1,{tl:{col:3,row:1},ext:{width:480,height:280}});}
-  if(images['Active by Zone']){var id2=workbook.addImage({base64:images['Active by Zone'],extension:'png'});wsZone.addImage(id2,{tl:{col:3,row:1},ext:{width:480,height:280}});}
-  var buf=await workbook.xlsx.writeBuffer();
-  return {ok:true,files:[{name:'PRP_Final_Output3.xlsx',bytes:buf,sheets:[{name:'Pivot',grid:pivotOutGrid},{name:'Summary',grid:summaryGrid},{name:'Active by Zone',grid:zoneActiveGrid}]}],chartImages:images};
+  function cleanKey(k) { return String(k).trim().toLowerCase(); }
+  var rows = sheet.rows.map(function (row) {
+    var out = {};
+    Object.keys(row).forEach(function (k) { out[cleanKey(k)] = row[k]; });
+    return out;
+  });
+
+  var pivot = E.pivotCount(
+    rows,
+    function (r) { return String(r.zone_assessing); },
+    function (r) { return String(r.assessment_status); },
+    { margins: true, marginsName: 'Grand Total' }
+  );
+
+  var headers = pivot.headers.slice();
+  var dataRows = pivot.rows.map(function (r) { return r.slice(); });
+
+  ['ACTIVE', 'Active', 'Deprioritized', 'Duplicate'].forEach(function (col) {
+    if (headers.indexOf(col) === -1) {
+      headers.push(col);
+      dataRows.forEach(function (r) { r.push(0); });
+    }
+  });
+
+  var activeUpperIdx = headers.indexOf('ACTIVE');
+  var activeIdx = headers.indexOf('Active');
+  headers.push('Active_Total');
+  dataRows.forEach(function (r) {
+    var a1 = activeUpperIdx >= 0 ? (r[activeUpperIdx] || 0) : 0;
+    var a2 = activeIdx >= 0 ? (r[activeIdx] || 0) : 0;
+    r.push(a1 + a2);
+  });
+
+  var pivotHeaderRow = ['Zone'].concat(headers);
+  var pivotOutRows = pivot.indexVals.map(function (iv, i) { return [iv].concat(dataRows[i]); });
+  var pivotOutGrid = [pivotHeaderRow].concat(pivotOutRows);
+
+  var grandIdx = pivot.indexVals.indexOf('Grand Total');
+  var grandRow = dataRows[grandIdx];
+  var activeTotalIdx = headers.indexOf('Active_Total');
+  var deprioritizedIdx = headers.indexOf('Deprioritized');
+  var duplicateIdx = headers.indexOf('Duplicate');
+  var summaryGrid = [
+    ['Status', 'Count'],
+    ['Active', grandRow[activeTotalIdx]],
+    ['Deprioritized', grandRow[deprioritizedIdx]],
+    ['Duplicate', grandRow[duplicateIdx]],
+  ];
+
+  var zoneActiveGrid = [['Zone', 'Active']].concat(
+    pivot.indexVals
+      .map(function (iv, i) { return [iv, dataRows[i][activeTotalIdx]]; })
+      .filter(function (pair) { return pair[0] !== 'Grand Total'; })
+  );
+
+  var files = [{
+    name: 'PRP_Final_Output3.xlsx',
+    sheets: [
+      { name: 'Pivot', grid: pivotOutGrid },
+      { name: 'Summary', grid: summaryGrid },
+      { name: 'Active by Zone', grid: zoneActiveGrid },
+    ],
+  }];
+
+  // Embedded charts reproduce the original openpyxl native BarChart look
+  // (white background, single blue series, value labels above each bar,
+  // axis titles) instead of the light in-page preview theme.
+  function excelBarChart(categories, values, title, xTitle, yTitle) {
+    return {
+      traces: [{
+        x: categories, y: values, type: 'bar',
+        marker: { color: '#4472C4' },
+        text: values.map(String), textposition: 'outside', textfont: { color: '#000000', size: 10 },
+      }],
+      layout: {
+        paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
+        title: { text: title, font: { color: '#000000', size: 13 } },
+        xaxis: { title: xTitle, tickfont: { color: '#000000' }, linecolor: '#808080', showline: true },
+        yaxis: { title: yTitle, tickfont: { color: '#000000' }, gridcolor: '#D9D9D9', zerolinecolor: '#808080' },
+        showlegend: false,
+        margin: { t: 50, r: 20, b: 50, l: 50 },
+      },
+    };
+  }
+  var statusRows = summaryGrid.slice(1);
+  var zoneRows = zoneActiveGrid.slice(1);
+  var chart1 = excelBarChart(
+    statusRows.map(function (r) { return r[0]; }), statusRows.map(function (r) { return r[1]; }),
+    'Assessment Status Overview', 'Assessment Status', 'Count'
+  );
+  var chart2 = excelBarChart(
+    zoneRows.map(function (r) { return r[0]; }), zoneRows.map(function (r) { return r[1]; }),
+    'Active by Zone', 'Zone', 'Count'
+  );
+  var images = {
+    'Summary': await B.renderStyledPng(chart1.traces, chart1.layout, 480, 280),
+    'Active by Zone': await B.renderStyledPng(chart2.traces, chart2.layout, 480, 280),
+  };
+
+  var workbook = new ExcelJS.Workbook();
+  function writeSheet(name, grid) {
+    var ws = workbook.addWorksheet(name);
+    grid.forEach(function (r) { ws.addRow(r); });
+    ws.columns.forEach(function (c) { c.width = 16; });
+    return ws;
+  }
+  writeSheet('Pivot', pivotOutGrid);
+  var wsSummary = writeSheet('Summary', summaryGrid);
+  var wsZone = writeSheet('Active by Zone', zoneActiveGrid);
+
+  // Native, editable single-series charts (data-linked to hidden helper
+  // blocks) replace the two baked PNGs.
+  var placements = [];
+  function s1cPlacement(ws, sheetName, rows, title) {
+    var cats = rows.map(function (r) { return r[0]; });
+    if (!cats.length) return;
+    var blk = window.NativeChartInject.buildDataBlock(ws, sheetName, cats, [
+      { name: 'Count', cache: rows.map(function (r) { return r[1]; }), color: '4472C4' },
+    ], 20);
+    placements.push({
+      sheetName: sheetName, anchor: { fromCol: 3, fromRow: 1, toCol: 12, toRow: 18 }, // ~"D2"
+      def: Object.assign({
+        grouping: 'clustered', legend: false, title: title,
+        axisColor: '000000', dataLabels: { position: 'outEnd', color: '000000' },
+      }, blk),
+    });
+  }
+  if (window.NativeChartInject && window.fflate) {
+    s1cPlacement(wsSummary, 'Summary', statusRows, 'Assessment Status Overview');
+    s1cPlacement(wsZone, 'Active by Zone', zoneRows, 'Active by Zone');
+  }
+
+  var buf = await workbook.xlsx.writeBuffer();
+  if (placements.length) {
+    try { buf = window.NativeChartInject.inject(new Uint8Array(buf), placements); }
+    catch (e) { console.error('s1c native chart inject failed:', e); }
+  }
+
+  return {
+    ok: true,
+    files: [{
+      name: 'PRP_Final_Output3.xlsx',
+      bytes: buf,
+      sheets: [
+        { name: 'Pivot', grid: pivotOutGrid },
+        { name: 'Summary', grid: summaryGrid },
+        { name: 'Active by Zone', grid: zoneActiveGrid },
+      ],
+    }],
+    chartImages: images,
+  };
 };
 
 // ── Inlined: reports/s2a.js ──────────────────────────────────────────────
 window.Reports.s2a = async function s2a(wb) {
-  var E = window.ReportEngine, B = window.ReportBridge;
-  var STAGE_ORDER=['Completed','In progress','Not started','Under review'];
-  var ORG_ORDER=['Africa','APAC','BEES','BEES | FINTECH','Europe','GHQ','Middle America Zone','North America Zone','South America Zone'];
-  var ZONE_MAP={'Africa':'AFR','APAC':'APAC','BEES':'GRO','BEES | FINTECH':'GRO','Europe':'EUR','GHQ':'GHQ','Middle America Zone':'MAZ','North America Zone':'NAZ','South America Zone':'SAZ'};
-  var ZONE_ORDER=['AFR','APAC','GRO','EUR','GHQ','MAZ','NAZ','SAZ'],OVERDUE_THRESHOLD=90;
-  var sheet=E.readSheet(wb,'OneTrust Assessment');
-  var rawHeaders=sheet.headers.map(function(h){return String(h).trim();});
-  var rows=sheet.rows.map(function(row){var out={};sheet.headers.forEach(function(h,i){out[rawHeaders[i]]=row[h];});return out;});
-  ['ID','Stage','Organization','Ageing'].forEach(function(c){if(rawHeaders.indexOf(c)===-1)throw new Error("Missing required columns in 'OneTrust Assessment': "+c);});
-  rows.forEach(function(r){r.Stage=E.isBlank(r.Stage)?'':String(r.Stage).trim();r.Organization=E.isBlank(r.Organization)?'':String(r.Organization).trim();var n=parseFloat(r.Ageing);r.Ageing=isNaN(n)?null:n;});
-  var data=rows.filter(function(r){return STAGE_ORDER.indexOf(r.Stage)!==-1;}).filter(function(r){return ORG_ORDER.indexOf(r.Organization)!==-1;});
-  data.forEach(function(r){r.Zone=ZONE_MAP[r.Organization];r['Is Overdue']=r.Ageing!==null&&r.Ageing>=OVERDUE_THRESHOLD;});
-  function reindexPivot(pivot,targetIndex,targetCols){var lookup={};pivot.indexVals.forEach(function(iv,i){lookup[iv]={};pivot.headers.forEach(function(h,j){lookup[iv][h]=pivot.rows[i][j];});});return{indexVals:targetIndex.slice(),headers:targetCols.slice(),rows:targetIndex.map(function(iv){return targetCols.map(function(col){return(lookup[iv]&&lookup[iv][col]!==undefined)?lookup[iv][col]:0;});})};}
-  var orgPivotRaw=E.pivotCount(data,function(r){return r.Organization;},function(r){return r.Stage;},{margins:false});
-  var orgPivot=reindexPivot(orgPivotRaw,ORG_ORDER,STAGE_ORDER);
-  var orgWithGT=orgPivot.rows.map(function(r){return r.concat([r.reduce(function(a,b){return a+b;},0)]);});
-  var pivotHeaders=STAGE_ORDER.concat(['Grand Total']);
-  var pivotTotalsRow=pivotHeaders.map(function(_,c){return orgWithGT.reduce(function(acc,r){return acc+r[c];},0);});
-  var zoneAgg={};
-  ORG_ORDER.forEach(function(org,i){var zone=ZONE_MAP[org];if(!zoneAgg[zone])zoneAgg[zone]=pivotHeaders.map(function(){return 0;});zoneAgg[zone]=zoneAgg[zone].map(function(v,c){return v+orgWithGT[i][c];});});
-  var completedIdx=pivotHeaders.indexOf('Completed'),underReviewIdx=pivotHeaders.indexOf('Under review'),inProgressIdx=pivotHeaders.indexOf('In progress'),notStartedIdx=pivotHeaders.indexOf('Not started'),gtIdx=pivotHeaders.indexOf('Grand Total');
-  var zoneSummary=ZONE_ORDER.map(function(z){var v=zoneAgg[z]||pivotHeaders.map(function(){return 0;});return{zone:z,closed:v[completedIdx]+v[underReviewIdx],open:v[inProgressIdx]+v[notStartedIdx],grandTotal:v[gtIdx]};});
-  var totalClosed=zoneSummary.reduce(function(a,z){return a+z.closed;},0),totalOpen=zoneSummary.reduce(function(a,z){return a+z.open;},0),totalAll=zoneSummary.reduce(function(a,z){return a+z.grandTotal;},0);
-  var overdueRows=data.filter(function(r){return r['Is Overdue'];});
-  var overduePivotRaw=E.pivotCount(overdueRows,function(r){return r.Zone;},function(r){return r.Stage;},{margins:false});
-  var overduePivot=reindexPivot(overduePivotRaw,ZONE_ORDER,STAGE_ORDER);
-  var overdueZone=ZONE_ORDER.map(function(z,i){var v=overduePivot.rows[i];return{zone:z,closed:v[completedIdx]+v[underReviewIdx],open:v[inProgressIdx]+v[notStartedIdx],grandTotal:(v[completedIdx]+v[underReviewIdx])+(v[inProgressIdx]+v[notStartedIdx])};});
-  var totalOverdueClosed=overdueZone.reduce(function(a,z){return a+z.closed;},0),totalOverdueOpen=overdueZone.reduce(function(a,z){return a+z.open;},0),totalOverdue=overdueZone.reduce(function(a,z){return a+z.grandTotal;},0);
-  function setCell(grid,row1,col1,value){var r=row1-1,c=col1-1;while(grid.length<=r)grid.push([]);while(grid[r].length<=c)grid[r].push(null);grid[r][c]=value;}
-  var g1=[],g2=[],g3=[];
-  setCell(g1,1,1,"Pivot-style summary from 'OneTrust Assessment'");setCell(g1,3,1,'Fields used');setCell(g1,4,1,'Rows');setCell(g1,4,2,'Organization');setCell(g1,5,1,'Columns');setCell(g1,5,2,'Stage');setCell(g1,6,1,'Values');setCell(g1,6,2,'Count of ID');
-  var pivotHeaderRow=['Organization'].concat(pivotHeaders);pivotHeaderRow.forEach(function(h,i){setCell(g1,8,i+1,h);});
-  ORG_ORDER.forEach(function(org,i){setCell(g1,9+i,1,org);orgWithGT[i].forEach(function(v,c){setCell(g1,9+i,c+2,v);});});
-  setCell(g1,9+ORG_ORDER.length,1,'Grand Total');pivotTotalsRow.forEach(function(v,c){setCell(g1,9+ORG_ORDER.length,c+2,v);});
-  setCell(g2,1,1,'Open vs Closed by Zone');setCell(g2,3,1,'Business rule');setCell(g2,4,1,'Closed = Under review + Completed');setCell(g2,5,1,'Open = In progress + Not started');
-  ['Zone','Closed','Open','Grand Total'].forEach(function(h,i){setCell(g2,8,i+1,h);});
-  zoneSummary.forEach(function(z,i){setCell(g2,9+i,1,z.zone);setCell(g2,9+i,2,z.closed);setCell(g2,9+i,3,z.open);setCell(g2,9+i,4,z.grandTotal);});
-  var totalRow2=9+ZONE_ORDER.length+1;setCell(g2,totalRow2,1,'Total');setCell(g2,totalRow2,2,totalClosed);setCell(g2,totalRow2,3,totalOpen);setCell(g2,totalRow2,4,totalAll);
-  setCell(g3,1,1,'Overdue Assessment Summary - Threshold = '+OVERDUE_THRESHOLD+' days');setCell(g3,3,1,'Rule');setCell(g3,4,1,'Overdue = Ageing >= '+OVERDUE_THRESHOLD+' days');setCell(g3,5,1,'Closed overdue = Completed + Under review');setCell(g3,6,1,'Open overdue = In progress + Not started');
-  ['Zone','Closed Overdue','Open Overdue','Overdue Total'].forEach(function(h,i){setCell(g3,9,i+1,h);});
-  overdueZone.forEach(function(z,i){setCell(g3,10+i,1,z.zone);setCell(g3,10+i,2,z.closed);setCell(g3,10+i,3,z.open);setCell(g3,10+i,4,z.grandTotal);});
-  var totalRow3=10+ZONE_ORDER.length+1;setCell(g3,totalRow3,1,'Total');setCell(g3,totalRow3,2,totalOverdueClosed);setCell(g3,totalRow3,3,totalOverdueOpen);setCell(g3,totalRow3,4,totalOverdue);
-  var sheetName3='Auto Overdue '+OVERDUE_THRESHOLD+'D';
-  function s2aChartTraces(zoneArr){var zones=zoneArr.map(function(z){return z.zone;}),closedVals=zoneArr.map(function(z){return z.closed;}),openVals=zoneArr.map(function(z){return z.open;}),totals=zoneArr.map(function(z){return z.closed+z.open;});return{zones:zones,totals:totals,traces:[{x:zones,y:closedVals,type:'bar',name:'Closed',marker:{color:'#2F75B5'},text:closedVals.map(function(v){return v>0?String(v):''}),textposition:'inside',insidetextanchor:'middle',textfont:{color:'#ffffff',size:9}},{x:zones,y:openVals,type:'bar',name:'Open',marker:{color:'#ED7D31'},text:openVals.map(function(v){return v>0?String(v):''}),textposition:'inside',insidetextanchor:'middle',textfont:{color:'#ffffff',size:9}}]};}
-  function s2aLayout(title,yTitle,zones,totals){var maxTotal=Math.max.apply(null,totals.concat([1]));return{barmode:'stack',paper_bgcolor:'#ffffff',plot_bgcolor:'#ffffff',title:{text:'<b>'+title+'</b>',font:{color:'#000000',size:14}},xaxis:{title:'Zone',tickfont:{color:'#000000'}},yaxis:{title:yTitle,gridcolor:'rgba(0,0,0,0.3)',griddash:'dash',range:[0,maxTotal*1.2]},legend:{orientation:'h',x:0.5,xanchor:'center',y:-0.25,font:{color:'#000000'}},annotations:zones.map(function(z,i){return totals[i]>0?{x:z,y:totals[i],text:String(totals[i]),showarrow:false,yshift:12,font:{color:'#000000',size:9}}:null;}).filter(Boolean),margin:{t:60,r:20,b:90,l:60}};}
-  var images={};
-  var oc=s2aChartTraces(zoneSummary);images['Auto Open Closed']=await B.renderStyledPng(oc.traces,s2aLayout(totalOpen+'/'+totalAll+' Open Assessment','Assessment Count',oc.zones,oc.totals),720,380);
-  var od=s2aChartTraces(overdueZone);images[sheetName3]=await B.renderStyledPng(od.traces,s2aLayout(totalOverdueOpen+'/'+totalOverdue+' Overdue Open Assessment ('+OVERDUE_THRESHOLD+'+ days)','Overdue Assessment Count',od.zones,od.totals),720,380);
-  var workbook=new ExcelJS.Workbook();
-  function writeSheet(name,grid){var ws=workbook.addWorksheet(name);grid.forEach(function(r){ws.addRow(r);});ws.columns.forEach(function(c){c.width=18;});return ws;}
-  writeSheet('Auto Pivot Summary',g1);var ws2=writeSheet('Auto Open Closed',g2),ws3=writeSheet(sheetName3,g3);
-  if(images['Auto Open Closed']){var id1=workbook.addImage({base64:images['Auto Open Closed'],extension:'png'});ws2.addImage(id1,{tl:{col:5,row:1},ext:{width:560,height:300}});}
-  if(images[sheetName3]){var id2=workbook.addImage({base64:images[sheetName3],extension:'png'});ws3.addImage(id2,{tl:{col:5,row:1},ext:{width:560,height:300}});}
-  var buf=await workbook.xlsx.writeBuffer();
-  return {ok:true,files:[{name:'OneTrust_Report.xlsx',bytes:buf,sheets:[{name:'Auto Pivot Summary',grid:g1},{name:'Auto Open Closed',grid:g2},{name:sheetName3,grid:g3}]}],chartImages:images};
+  var E = window.ReportEngine;
+  var B = window.ReportBridge;
+
+  var STAGE_ORDER = ['Completed', 'In progress', 'Not started', 'Under review'];
+  var ORG_ORDER = [
+    'Africa', 'APAC', 'BEES', 'BEES | FINTECH', 'Europe', 'GHQ',
+    'Middle America Zone', 'North America Zone', 'South America Zone',
+  ];
+  var ZONE_MAP = {
+    'Africa': 'AFR', 'APAC': 'APAC', 'BEES': 'GRO', 'BEES | FINTECH': 'GRO',
+    'Europe': 'EUR', 'GHQ': 'GHQ', 'Middle America Zone': 'MAZ',
+    'North America Zone': 'NAZ', 'South America Zone': 'SAZ',
+  };
+  var ZONE_ORDER = ['AFR', 'APAC', 'GRO', 'EUR', 'GHQ', 'MAZ', 'NAZ', 'SAZ'];
+  var OVERDUE_THRESHOLD = 90;
+
+  var sheet = E.readSheet(wb, 'OneTrust Assessment');
+  var rawHeaders = sheet.headers.map(function (h) { return String(h).trim(); });
+  var rows = sheet.rows.map(function (row) {
+    var out = {};
+    sheet.headers.forEach(function (h, i) { out[rawHeaders[i]] = row[h]; });
+    return out;
+  });
+  ['ID', 'Stage', 'Organization', 'Ageing'].forEach(function (c) {
+    if (rawHeaders.indexOf(c) === -1) throw new Error("Missing required columns in 'OneTrust Assessment': " + c);
+  });
+
+  rows.forEach(function (r) {
+    r.Stage = E.isBlank(r.Stage) ? '' : String(r.Stage).trim();
+    r.Organization = E.isBlank(r.Organization) ? '' : String(r.Organization).trim();
+    var n = parseFloat(r.Ageing);
+    r.Ageing = isNaN(n) ? null : n;
+  });
+
+  var data = rows
+    .filter(function (r) { return STAGE_ORDER.indexOf(r.Stage) !== -1; })
+    .filter(function (r) { return ORG_ORDER.indexOf(r.Organization) !== -1; });
+  data.forEach(function (r) {
+    r.Zone = ZONE_MAP[r.Organization];
+    r['Is Overdue'] = r.Ageing !== null && r.Ageing >= OVERDUE_THRESHOLD;
+  });
+
+  function reindexPivot(pivot, targetIndex, targetCols) {
+    var lookup = {};
+    pivot.indexVals.forEach(function (iv, i) {
+      lookup[iv] = {};
+      pivot.headers.forEach(function (h, j) { lookup[iv][h] = pivot.rows[i][j]; });
+    });
+    return {
+      indexVals: targetIndex.slice(),
+      headers: targetCols.slice(),
+      rows: targetIndex.map(function (iv) {
+        return targetCols.map(function (col) {
+          return (lookup[iv] && lookup[iv][col] !== undefined) ? lookup[iv][col] : 0;
+        });
+      }),
+    };
+  }
+
+  // --- pivot_df: Organization x Stage, reindexed, + Grand Total col & row ---
+  var orgPivotRaw = E.pivotCount(data, function (r) { return r.Organization; }, function (r) { return r.Stage; }, { margins: false });
+  var orgPivot = reindexPivot(orgPivotRaw, ORG_ORDER, STAGE_ORDER);
+  var orgWithGT = orgPivot.rows.map(function (r) { return r.concat([r.reduce(function (a, b) { return a + b; }, 0)]); });
+  var pivotHeaders = STAGE_ORDER.concat(['Grand Total']);
+  var pivotTotalsRow = pivotHeaders.map(function (_, c) { return orgWithGT.reduce(function (acc, r) { return acc + r[c]; }, 0); });
+
+  // --- zone_stage -> zone_summary (Closed/Open/Grand Total by zone) ---
+  var zoneAgg = {};
+  ORG_ORDER.forEach(function (org, i) {
+    var zone = ZONE_MAP[org];
+    if (!zoneAgg[zone]) zoneAgg[zone] = pivotHeaders.map(function () { return 0; });
+    zoneAgg[zone] = zoneAgg[zone].map(function (v, c) { return v + orgWithGT[i][c]; });
+  });
+  var completedIdx = pivotHeaders.indexOf('Completed'), underReviewIdx = pivotHeaders.indexOf('Under review');
+  var inProgressIdx = pivotHeaders.indexOf('In progress'), notStartedIdx = pivotHeaders.indexOf('Not started');
+  var gtIdx = pivotHeaders.indexOf('Grand Total');
+  var zoneSummary = ZONE_ORDER.map(function (z) {
+    var v = zoneAgg[z] || pivotHeaders.map(function () { return 0; });
+    var closed = v[completedIdx] + v[underReviewIdx];
+    var open = v[inProgressIdx] + v[notStartedIdx];
+    return { zone: z, closed: closed, open: open, grandTotal: v[gtIdx] };
+  });
+  var totalClosed = zoneSummary.reduce(function (a, z) { return a + z.closed; }, 0);
+  var totalOpen = zoneSummary.reduce(function (a, z) { return a + z.open; }, 0);
+  var totalAll = zoneSummary.reduce(function (a, z) { return a + z.grandTotal; }, 0);
+
+  // --- overdue_zone: same shape, computed only from Is-Overdue rows ---
+  var overdueRows = data.filter(function (r) { return r['Is Overdue']; });
+  var overduePivotRaw = E.pivotCount(overdueRows, function (r) { return r.Zone; }, function (r) { return r.Stage; }, { margins: false });
+  var overduePivot = reindexPivot(overduePivotRaw, ZONE_ORDER, STAGE_ORDER);
+  var overdueZone = ZONE_ORDER.map(function (z, i) {
+    var v = overduePivot.rows[i];
+    var closed = v[completedIdx] + v[underReviewIdx];
+    var open = v[inProgressIdx] + v[notStartedIdx];
+    return { zone: z, closed: closed, open: open, grandTotal: closed + open };
+  });
+  var totalOverdueClosed = overdueZone.reduce(function (a, z) { return a + z.closed; }, 0);
+  var totalOverdueOpen = overdueZone.reduce(function (a, z) { return a + z.open; }, 0);
+  var totalOverdue = overdueZone.reduce(function (a, z) { return a + z.grandTotal; }, 0);
+
+  // --- grid builder (1-indexed row/col, matching ws.cell(row,col,value)) ---
+  function setCell(grid, row1, col1, value) {
+    var r = row1 - 1, c = col1 - 1;
+    while (grid.length <= r) grid.push([]);
+    while (grid[r].length <= c) grid[r].push(null);
+    grid[r][c] = value;
+  }
+
+  // Sheet 1: Auto Pivot Summary
+  var g1 = [];
+  setCell(g1, 1, 1, "Pivot-style summary from 'OneTrust Assessment'");
+  setCell(g1, 3, 1, 'Fields used');
+  setCell(g1, 4, 1, 'Rows'); setCell(g1, 4, 2, 'Organization');
+  setCell(g1, 5, 1, 'Columns'); setCell(g1, 5, 2, 'Stage');
+  setCell(g1, 6, 1, 'Values'); setCell(g1, 6, 2, 'Count of ID');
+  var pivotHeaderRow = ['Organization'].concat(pivotHeaders);
+  pivotHeaderRow.forEach(function (h, i) { setCell(g1, 8, i + 1, h); });
+  ORG_ORDER.forEach(function (org, i) {
+    setCell(g1, 9 + i, 1, org);
+    orgWithGT[i].forEach(function (v, c) { setCell(g1, 9 + i, c + 2, v); });
+  });
+  setCell(g1, 9 + ORG_ORDER.length, 1, 'Grand Total');
+  pivotTotalsRow.forEach(function (v, c) { setCell(g1, 9 + ORG_ORDER.length, c + 2, v); });
+
+  // Sheet 2: Auto Open Closed
+  var g2 = [];
+  setCell(g2, 1, 1, 'Open vs Closed by Zone');
+  setCell(g2, 3, 1, 'Business rule');
+  setCell(g2, 4, 1, 'Closed = Under review + Completed');
+  setCell(g2, 5, 1, 'Open = In progress + Not started');
+  ['Zone', 'Closed', 'Open', 'Grand Total'].forEach(function (h, i) { setCell(g2, 8, i + 1, h); });
+  zoneSummary.forEach(function (z, i) {
+    setCell(g2, 9 + i, 1, z.zone);
+    setCell(g2, 9 + i, 2, z.closed);
+    setCell(g2, 9 + i, 3, z.open);
+    setCell(g2, 9 + i, 4, z.grandTotal);
+  });
+  var totalRow2 = 9 + ZONE_ORDER.length + 1;
+  setCell(g2, totalRow2, 1, 'Total');
+  setCell(g2, totalRow2, 2, totalClosed);
+  setCell(g2, totalRow2, 3, totalOpen);
+  setCell(g2, totalRow2, 4, totalAll);
+
+  // Sheet 3: Auto Overdue {N}D
+  var g3 = [];
+  setCell(g3, 1, 1, 'Overdue Assessment Summary - Threshold = ' + OVERDUE_THRESHOLD + ' days');
+  setCell(g3, 3, 1, 'Rule');
+  setCell(g3, 4, 1, 'Overdue = Ageing >= ' + OVERDUE_THRESHOLD + ' days');
+  setCell(g3, 5, 1, 'Closed overdue = Completed + Under review');
+  setCell(g3, 6, 1, 'Open overdue = In progress + Not started');
+  ['Zone', 'Closed Overdue', 'Open Overdue', 'Overdue Total'].forEach(function (h, i) { setCell(g3, 9, i + 1, h); });
+  overdueZone.forEach(function (z, i) {
+    setCell(g3, 10 + i, 1, z.zone);
+    setCell(g3, 10 + i, 2, z.closed);
+    setCell(g3, 10 + i, 3, z.open);
+    setCell(g3, 10 + i, 4, z.grandTotal);
+  });
+  var totalRow3 = 10 + ZONE_ORDER.length + 1;
+  setCell(g3, totalRow3, 1, 'Total');
+  setCell(g3, totalRow3, 2, totalOverdueClosed);
+  setCell(g3, totalRow3, 3, totalOverdueOpen);
+  setCell(g3, totalRow3, 4, totalOverdue);
+
+  var sheetName3 = 'Auto Overdue ' + OVERDUE_THRESHOLD + 'D';
+  var files = [{
+    name: 'OneTrust_Report.xlsx',
+    sheets: [
+      { name: 'Auto Pivot Summary', grid: g1 },
+      { name: 'Auto Open Closed', grid: g2 },
+      { name: sheetName3, grid: g3 },
+    ],
+  }];
+
+  // Embedded charts reproduce the original matplotlib style exactly (white
+  // background, blue "Closed" + orange "Open" stacked bars, white in-bar
+  // value labels, bold total label above each bar, bottom legend, dashed
+  // gridlines) instead of the light in-page preview theme. Both charts are
+  // embedded into the file (matching today's 2-chart-per-file output) even
+  // though the preview only ever surfaces the first one — confirmed with
+  // the user as the intended behavior, not a bug to fix.
+  function s2aChartTraces(zoneArr) {
+    var zones = zoneArr.map(function (z) { return z.zone; });
+    var closedVals = zoneArr.map(function (z) { return z.closed; });
+    var openVals = zoneArr.map(function (z) { return z.open; });
+    var totals = zoneArr.map(function (z) { return z.closed + z.open; });
+    return {
+      zones: zones, totals: totals,
+      traces: [
+        { x: zones, y: closedVals, type: 'bar', name: 'Closed', marker: { color: '#2F75B5' },
+          text: closedVals.map(function (v) { return v > 0 ? String(v) : ''; }),
+          textposition: 'inside', insidetextanchor: 'middle', textfont: { color: '#ffffff', size: 9 } },
+        { x: zones, y: openVals, type: 'bar', name: 'Open', marker: { color: '#ED7D31' },
+          text: openVals.map(function (v) { return v > 0 ? String(v) : ''; }),
+          textposition: 'inside', insidetextanchor: 'middle', textfont: { color: '#ffffff', size: 9 } },
+      ],
+    };
+  }
+  function s2aLayout(title, yTitle, zones, totals) {
+    var maxTotal = Math.max.apply(null, totals.concat([1]));
+    return {
+      barmode: 'stack',
+      paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
+      title: { text: '<b>' + title + '</b>', font: { color: '#000000', size: 14 } },
+      xaxis: { title: 'Zone', tickfont: { color: '#000000' } },
+      yaxis: { title: yTitle, gridcolor: 'rgba(0,0,0,0.3)', griddash: 'dash', range: [0, maxTotal * 1.2] },
+      legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.25, font: { color: '#000000' } },
+      annotations: zones.map(function (z, i) {
+        return totals[i] > 0
+          ? { x: z, y: totals[i], text: String(totals[i]), showarrow: false, yshift: 12, font: { color: '#000000', size: 9 } }
+          : null;
+      }).filter(Boolean),
+      margin: { t: 60, r: 20, b: 90, l: 60 },
+    };
+  }
+  var images = {};
+  var oc = s2aChartTraces(zoneSummary);
+  images['Auto Open Closed'] = await B.renderStyledPng(
+    oc.traces, s2aLayout(totalOpen + '/' + totalAll + ' Open Assessment', 'Assessment Count', oc.zones, oc.totals), 720, 380
+  );
+  var od = s2aChartTraces(overdueZone);
+  images[sheetName3] = await B.renderStyledPng(
+    od.traces,
+    s2aLayout(totalOverdueOpen + '/' + totalOverdue + ' Overdue Open Assessment (' + OVERDUE_THRESHOLD + '+ days)', 'Overdue Assessment Count', od.zones, od.totals),
+    720, 380
+  );
+
+  var workbook = new ExcelJS.Workbook();
+  function writeSheet(name, grid) {
+    var ws = workbook.addWorksheet(name);
+    grid.forEach(function (r) { ws.addRow(r); });
+    ws.columns.forEach(function (c) { c.width = 18; });
+    return ws;
+  }
+  writeSheet('Auto Pivot Summary', g1);
+  var ws2 = writeSheet('Auto Open Closed', g2);
+  var ws3 = writeSheet(sheetName3, g3);
+
+  // Native, editable stacked charts (data-linked to hidden helper blocks)
+  // replace the two baked PNGs. Series: Closed (blue) + Open (orange).
+  var placements = [];
+  function s2aPlacement(ws, sheetName, zoneArr, title) {
+    var zones = zoneArr.map(function (z) { return z.zone; });
+    if (!zones.length) return;
+    var blk = window.NativeChartInject.buildDataBlock(ws, sheetName, zones, [
+      { name: 'Closed', cache: zoneArr.map(function (z) { return z.closed; }), color: '2F75B5' },
+      { name: 'Open', cache: zoneArr.map(function (z) { return z.open; }), color: 'ED7D31' },
+    ], 20);
+    placements.push({
+      sheetName: sheetName, anchor: { fromCol: 5, fromRow: 1, toCol: 15, toRow: 20 }, // ~"F2"
+      def: Object.assign({
+        grouping: 'stacked', legend: true, title: title,
+        axisColor: '000000', dataLabels: { position: 'ctr', color: 'FFFFFF' },
+      }, blk),
+    });
+  }
+  if (window.NativeChartInject && window.fflate) {
+    s2aPlacement(ws2, 'Auto Open Closed', zoneSummary, totalOpen + '/' + totalAll + ' Open Assessment');
+    s2aPlacement(ws3, sheetName3, overdueZone,
+      totalOverdueOpen + '/' + totalOverdue + ' Overdue Open Assessment (' + OVERDUE_THRESHOLD + '+ days)');
+  }
+
+  var buf = await workbook.xlsx.writeBuffer();
+  if (placements.length) {
+    try { buf = window.NativeChartInject.inject(new Uint8Array(buf), placements); }
+    catch (e) { console.error('s2a native chart inject failed:', e); }
+  }
+
+  return {
+    ok: true,
+    files: [{
+      name: 'OneTrust_Report.xlsx',
+      bytes: buf,
+      sheets: [
+        { name: 'Auto Pivot Summary', grid: g1 },
+        { name: 'Auto Open Closed', grid: g2 },
+        { name: sheetName3, grid: g3 },
+      ],
+    }],
+    chartImages: images,
+  };
 };
 
 // ── Inlined: reports/s3d.js ──────────────────────────────────────────────
 window.Reports.s3d = async function s3d(wb) {
-  var E = window.ReportEngine, B = window.ReportBridge;
-  var sheet=E.readSheet(wb,'OneTrust - Risk Export');
-  var rawHeaders=sheet.headers,cleanedHeaders=rawHeaders.map(function(h){return String(h).replace(/\r/g,'').replace(/\n/g,'').trim();});
-  var rows=sheet.rows.map(function(row){var out={};rawHeaders.forEach(function(h,i){out[cleanedHeaders[i]]=row[h];});return out;});
-  function findColumn(possibleNames){var lookup={};cleanedHeaders.forEach(function(c){lookup[String(c).trim().toLowerCase()]=c;});for(var i=0;i<possibleNames.length;i++){var key=possibleNames[i].toLowerCase();if(lookup.hasOwnProperty(key))return lookup[key];}return null;}
-  var organizationCol=findColumn(['Organization']),idCol=findColumn(['ID']),stageCol=findColumn(['Stage']),agingCol=findColumn(['Aging','Ageing']);
-  var missing=[];if(!organizationCol)missing.push('Organization');if(!idCol)missing.push('ID');if(!stageCol)missing.push('Stage');if(!agingCol)missing.push('Aging or Ageing');
-  if(missing.length)throw new Error('Missing required columns: '+missing.join(', '));
-  rows.forEach(function(r){r[organizationCol]=E.isBlank(r[organizationCol])?'':String(r[organizationCol]).trim();r[stageCol]=E.isBlank(r[stageCol])?'':String(r[stageCol]).trim();r.Stage_Clean=r[stageCol].toLowerCase().trim();});
-  function extractNumber(value){if(E.isBlank(value))return null;var m=String(value).trim().match(/\d+(\.\d+)?/);return m?parseFloat(m[0]):null;}
-  rows.forEach(function(r){var n=extractNumber(r[agingCol]);r.Aging_Days=(n===null)?0:n;});
-  var SELECTED_STAGES={evaluation:1,identified:1,treatment:1};
-  var filtered=rows.filter(function(r){return SELECTED_STAGES.hasOwnProperty(r.Stage_Clean);}).filter(function(r){return r[organizationCol]!=='';});
-  filtered.forEach(function(r){r.Risk_Status=r.Aging_Days>90?'Overdue':'Open';});
-  var pivot=E.pivotCount(filtered,function(r){return String(r[organizationCol]);},function(r){return r.Risk_Status;},{margins:true,marginsName:'Grand Total'});
-  var headers=pivot.headers.slice(),dataRows=pivot.rows.map(function(r){return r.slice();});
-  ['Open','Overdue'].forEach(function(col){if(headers.indexOf(col)===-1){headers.push(col);dataRows.forEach(function(r){r.push(0);});}});
-  var openIdx=headers.indexOf('Open'),overdueIdx=headers.indexOf('Overdue');
-  if(headers.indexOf('Grand Total')===-1){headers.push('Grand Total');dataRows.forEach(function(r){r.push((r[openIdx]||0)+(r[overdueIdx]||0));});}
-  var gtIdx=headers.indexOf('Grand Total');
-  var openOverdueGrid=[['Organization','Open','Overdue','Grand Total']].concat(pivot.indexVals.map(function(iv,i){var r=dataRows[i];return[iv,r[openIdx]||0,r[overdueIdx]||0,r[gtIdx]||0];}));
-  var ZONE_MAP={'Africa':'AFR','APAC':'APAC','BEES':'GRO','BEES | FINTECH':'GRO','Europe':'EUR','GHQ':'GHQ','Middle America Zone':'MAZ','North America Zone':'NAZ','South America Zone':'SAZ'};
-  var zoneAgg={};
-  openOverdueGrid.slice(1).forEach(function(r){if(r[0]==='Grand Total')return;var zone=ZONE_MAP[r[0]];if(zone===undefined)return;if(!zoneAgg[zone])zoneAgg[zone]={open:0,overdue:0};zoneAgg[zone].open+=r[1];zoneAgg[zone].overdue+=r[2];});
-  var ZONE_ORDER=['AFR','APAC','GRO','EUR','GHQ','MAZ','NAZ','SAZ'];
-  var zonesPresent=Object.keys(zoneAgg).sort(function(a,b){var ia=ZONE_ORDER.indexOf(a);if(ia===-1)ia=999;var ib=ZONE_ORDER.indexOf(b);if(ib===-1)ib=999;return ia-ib;});
-  var openVsOverdueGrid=[['Zones','Open','Overdue']].concat(zonesPresent.map(function(z){return[z,zoneAgg[z].open,zoneAgg[z].overdue];}));
-  var TOTAL_STAGES={evaluation:1,identified:1,treatment:1,monitoring:1},OPEN_STAGES={evaluation:1,identified:1,treatment:1};
-  function countByOrg(rowsSubset){var m={};rowsSubset.forEach(function(r){if(E.isBlank(r[idCol]))return;var k=r[organizationCol];m[k]=(m[k]||0)+1;});return m;}
-  var totalCounts=countByOrg(rows.filter(function(r){return TOTAL_STAGES.hasOwnProperty(r.Stage_Clean);}));
-  var openCounts=countByOrg(rows.filter(function(r){return OPEN_STAGES.hasOwnProperty(r.Stage_Clean);}));
-  var zoneSummaryGrid=[['Zones','Total Risks','Open Risks']].concat(Object.keys(totalCounts).sort().filter(function(o){return o!=='';}).map(function(o){return[o,totalCounts[o],openCounts[o]||0];}));
-  function s3dLayout(title){return{barmode:'stack',paper_bgcolor:'#000000',plot_bgcolor:'#000000',title:{text:'<b>'+title+'</b>',font:{color:'#ffffff',size:14}},xaxis:{tickfont:{color:'#ffffff'},linecolor:'#ffffff',showline:true},yaxis:{tickfont:{color:'#ffffff'},gridcolor:'#444444'},legend:{orientation:'h',x:0.5,xanchor:'center',y:-0.2,font:{color:'#ffffff'}},margin:{t:50,r:20,b:70,l:50}};}
-  var images={};
-  var oovDataRows=openVsOverdueGrid.slice(1);
-  if(oovDataRows.length){var oovZones=oovDataRows.map(function(r){return r[0];}),oovOpen=oovDataRows.map(function(r){return r[1];}),oovOverdue=oovDataRows.map(function(r){return r[2];});var oovTraces=[{x:oovZones,y:oovOpen,type:'bar',name:'Open',marker:{color:'#156082'},text:oovOpen.map(String),textposition:'inside',insidetextanchor:'middle',textfont:{color:'#ffffff'}},{x:oovZones,y:oovOverdue,type:'bar',name:'Overdue',marker:{color:'#C00000'},text:oovOverdue.map(String),textposition:'inside',insidetextanchor:'middle',textfont:{color:'#ffffff'}}];images['Open vs Overdue']=await B.renderStyledPng(oovTraces,s3dLayout('Open vs Overdue Risks'),720,420);}
-  var zsDataRows=zoneSummaryGrid.slice(1);
-  if(zsDataRows.length){var zsZones=zsDataRows.map(function(r){return r[0];}),zsTotal=zsDataRows.map(function(r){return r[1];}),zsOpen=zsDataRows.map(function(r){return r[2];});var zsTraces=[{x:zsZones,y:zsTotal,type:'bar',name:'Total Risks',marker:{color:'#156082'},text:zsTotal.map(String),textposition:'inside',insidetextanchor:'middle',textfont:{color:'#ffffff'}},{x:zsZones,y:zsOpen,type:'bar',name:'Open Risks',marker:{color:'#F26C23'},text:zsOpen.map(String),textposition:'inside',insidetextanchor:'middle',textfont:{color:'#ffffff'}}];images['Zone Summary']=await B.renderStyledPng(zsTraces,s3dLayout('Zone wise Risks'),720,420);}
-  var workbook=new ExcelJS.Workbook();
-  function writeSheet(name,grid){var ws=workbook.addWorksheet(name);grid.forEach(function(r){ws.addRow(r);});ws.columns.forEach(function(c){c.width=20;});return ws;}
-  writeSheet('Open Overdue Pivot',openOverdueGrid);var wsOpenVsOverdue=writeSheet('Open vs Overdue',openVsOverdueGrid),wsZoneSummary=writeSheet('Zone Summary',zoneSummaryGrid);
-  if(images['Open vs Overdue']){var id1=workbook.addImage({base64:images['Open vs Overdue'],extension:'png'});wsOpenVsOverdue.addImage(id1,{tl:{col:4,row:3},ext:{width:480,height:280}});}
-  if(images['Zone Summary']){var id2=workbook.addImage({base64:images['Zone Summary'],extension:'png'});wsZoneSummary.addImage(id2,{tl:{col:4,row:3},ext:{width:480,height:280}});}
-  var buf=await workbook.xlsx.writeBuffer();
-  return {ok:true,files:[{name:'Risk_Output.xlsx',bytes:buf,sheets:[{name:'Open Overdue Pivot',grid:openOverdueGrid},{name:'Open vs Overdue',grid:openVsOverdueGrid},{name:'Zone Summary',grid:zoneSummaryGrid}]}],chartImages:images};
+  var E = window.ReportEngine;
+  var B = window.ReportBridge;
+
+  var sheet = E.readSheet(wb, 'OneTrust - Risk Export');
+  var rawHeaders = sheet.headers;
+  var cleanedHeaders = rawHeaders.map(function (h) { return String(h).replace(/\r/g, '').replace(/\n/g, '').trim(); });
+  var rows = sheet.rows.map(function (row) {
+    var out = {};
+    rawHeaders.forEach(function (h, i) { out[cleanedHeaders[i]] = row[h]; });
+    return out;
+  });
+
+  function findColumn(possibleNames) {
+    var lookup = {};
+    cleanedHeaders.forEach(function (c) { lookup[String(c).trim().toLowerCase()] = c; });
+    for (var i = 0; i < possibleNames.length; i++) {
+      var key = possibleNames[i].toLowerCase();
+      if (lookup.hasOwnProperty(key)) return lookup[key];
+    }
+    return null;
+  }
+  var organizationCol = findColumn(['Organization']);
+  var idCol = findColumn(['ID']);
+  var stageCol = findColumn(['Stage']);
+  var agingCol = findColumn(['Aging', 'Ageing']);
+  var missing = [];
+  if (!organizationCol) missing.push('Organization');
+  if (!idCol) missing.push('ID');
+  if (!stageCol) missing.push('Stage');
+  if (!agingCol) missing.push('Aging or Ageing');
+  if (missing.length) throw new Error('Missing required columns: ' + missing.join(', '));
+
+  rows.forEach(function (r) {
+    r[organizationCol] = E.isBlank(r[organizationCol]) ? '' : String(r[organizationCol]).trim();
+    r[stageCol] = E.isBlank(r[stageCol]) ? '' : String(r[stageCol]).trim();
+    r.Stage_Clean = r[stageCol].toLowerCase().trim();
+  });
+
+  function extractNumber(value) {
+    if (E.isBlank(value)) return null;
+    var m = String(value).trim().match(/\d+(\.\d+)?/);
+    return m ? parseFloat(m[0]) : null;
+  }
+  rows.forEach(function (r) {
+    var n = extractNumber(r[agingCol]);
+    r.Aging_Days = (n === null) ? 0 : n;
+  });
+
+  var SELECTED_STAGES = { evaluation: 1, identified: 1, treatment: 1 };
+  var filtered = rows
+    .filter(function (r) { return SELECTED_STAGES.hasOwnProperty(r.Stage_Clean); })
+    .filter(function (r) { return r[organizationCol] !== ''; });
+  filtered.forEach(function (r) { r.Risk_Status = r.Aging_Days > 90 ? 'Overdue' : 'Open'; });
+
+  var pivot = E.pivotCount(
+    filtered,
+    function (r) { return String(r[organizationCol]); },
+    function (r) { return r.Risk_Status; },
+    { margins: true, marginsName: 'Grand Total' }
+  );
+  var headers = pivot.headers.slice();
+  var dataRows = pivot.rows.map(function (r) { return r.slice(); });
+  ['Open', 'Overdue'].forEach(function (col) {
+    if (headers.indexOf(col) === -1) {
+      headers.push(col);
+      dataRows.forEach(function (r) { r.push(0); });
+    }
+  });
+  var openIdx = headers.indexOf('Open'), overdueIdx = headers.indexOf('Overdue');
+  if (headers.indexOf('Grand Total') === -1) {
+    headers.push('Grand Total');
+    dataRows.forEach(function (r) { r.push((r[openIdx] || 0) + (r[overdueIdx] || 0)); });
+  }
+  var gtIdx = headers.indexOf('Grand Total');
+  var openOverdueGrid = [['Organization', 'Open', 'Overdue', 'Grand Total']].concat(
+    pivot.indexVals.map(function (iv, i) {
+      var r = dataRows[i];
+      return [iv, r[openIdx] || 0, r[overdueIdx] || 0, r[gtIdx] || 0];
+    })
+  );
+
+  var ZONE_MAP = {
+    'Africa': 'AFR', 'APAC': 'APAC', 'BEES': 'GRO', 'BEES | FINTECH': 'GRO',
+    'Europe': 'EUR', 'GHQ': 'GHQ', 'Middle America Zone': 'MAZ',
+    'North America Zone': 'NAZ', 'South America Zone': 'SAZ',
+  };
+  var zoneAgg = {};
+  openOverdueGrid.slice(1).forEach(function (r) {
+    if (r[0] === 'Grand Total') return;
+    var zone = ZONE_MAP[r[0]];
+    if (zone === undefined) return; // dropna(subset=["Zones"]) equivalent
+    if (!zoneAgg[zone]) zoneAgg[zone] = { open: 0, overdue: 0 };
+    zoneAgg[zone].open += r[1];
+    zoneAgg[zone].overdue += r[2];
+  });
+  var ZONE_ORDER = ['AFR', 'APAC', 'GRO', 'EUR', 'GHQ', 'MAZ', 'NAZ', 'SAZ'];
+  var zonesPresent = Object.keys(zoneAgg).sort(function (a, b) {
+    var ia = ZONE_ORDER.indexOf(a); if (ia === -1) ia = 999;
+    var ib = ZONE_ORDER.indexOf(b); if (ib === -1) ib = 999;
+    return ia - ib;
+  });
+  var openVsOverdueGrid = [['Zones', 'Open', 'Overdue']].concat(
+    zonesPresent.map(function (z) { return [z, zoneAgg[z].open, zoneAgg[z].overdue]; })
+  );
+
+  var TOTAL_STAGES = { evaluation: 1, identified: 1, treatment: 1, monitoring: 1 };
+  var OPEN_STAGES = { evaluation: 1, identified: 1, treatment: 1 };
+  function countByOrg(rowsSubset) {
+    var m = {};
+    rowsSubset.forEach(function (r) {
+      if (E.isBlank(r[idCol])) return; // pandas .count() skips nulls
+      var k = r[organizationCol];
+      m[k] = (m[k] || 0) + 1;
+    });
+    return m;
+  }
+  var totalCounts = countByOrg(rows.filter(function (r) { return TOTAL_STAGES.hasOwnProperty(r.Stage_Clean); }));
+  var openCounts = countByOrg(rows.filter(function (r) { return OPEN_STAGES.hasOwnProperty(r.Stage_Clean); }));
+  var zoneSummaryGrid = [['Zones', 'Total Risks', 'Open Risks']].concat(
+    Object.keys(totalCounts).sort() // groupby(..., sort default True)
+      .filter(function (o) { return o !== ''; })
+      .map(function (o) { return [o, totalCounts[o], openCounts[o] || 0]; })
+  );
+
+  var files = [{
+    name: 'Risk_Output.xlsx',
+    sheets: [
+      { name: 'Open Overdue Pivot', grid: openOverdueGrid },
+      { name: 'Open vs Overdue', grid: openVsOverdueGrid },
+      { name: 'Zone Summary', grid: zoneSummaryGrid },
+    ],
+  }];
+
+  // Embedded charts reproduce the original xlsxwriter native stacked column
+  // charts (black chart/plot area, white text, dark gridlines, bottom
+  // legend, white in-bar value labels) instead of the light preview theme.
+  function s3dLayout(title) {
+    return {
+      barmode: 'stack',
+      paper_bgcolor: '#000000', plot_bgcolor: '#000000',
+      title: { text: '<b>' + title + '</b>', font: { color: '#ffffff', size: 14 } },
+      xaxis: { tickfont: { color: '#ffffff' }, linecolor: '#ffffff', showline: true },
+      yaxis: { tickfont: { color: '#ffffff' }, gridcolor: '#444444' },
+      legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.2, font: { color: '#ffffff' } },
+      margin: { t: 50, r: 20, b: 70, l: 50 },
+    };
+  }
+  var images = {};
+  var oovDataRows = openVsOverdueGrid.slice(1);
+  if (oovDataRows.length) {
+    var oovZones = oovDataRows.map(function (r) { return r[0]; });
+    var oovOpen = oovDataRows.map(function (r) { return r[1]; });
+    var oovOverdue = oovDataRows.map(function (r) { return r[2]; });
+    var oovTraces = [
+      { x: oovZones, y: oovOpen, type: 'bar', name: 'Open', marker: { color: '#156082' },
+        text: oovOpen.map(String), textposition: 'inside', insidetextanchor: 'middle', textfont: { color: '#ffffff' } },
+      { x: oovZones, y: oovOverdue, type: 'bar', name: 'Overdue', marker: { color: '#C00000' },
+        text: oovOverdue.map(String), textposition: 'inside', insidetextanchor: 'middle', textfont: { color: '#ffffff' } },
+    ];
+    images['Open vs Overdue'] = await B.renderStyledPng(oovTraces, s3dLayout('Open vs Overdue Risks'), 720, 420);
+  }
+  var zsDataRows = zoneSummaryGrid.slice(1);
+  if (zsDataRows.length) {
+    var zsZones = zsDataRows.map(function (r) { return r[0]; });
+    var zsTotal = zsDataRows.map(function (r) { return r[1]; });
+    var zsOpen = zsDataRows.map(function (r) { return r[2]; });
+    var zsTraces = [
+      { x: zsZones, y: zsTotal, type: 'bar', name: 'Total Risks', marker: { color: '#156082' },
+        text: zsTotal.map(String), textposition: 'inside', insidetextanchor: 'middle', textfont: { color: '#ffffff' } },
+      { x: zsZones, y: zsOpen, type: 'bar', name: 'Open Risks', marker: { color: '#F26C23' },
+        text: zsOpen.map(String), textposition: 'inside', insidetextanchor: 'middle', textfont: { color: '#ffffff' } },
+    ];
+    images['Zone Summary'] = await B.renderStyledPng(zsTraces, s3dLayout('Zone wise Risks'), 720, 420);
+  }
+
+  var workbook = new ExcelJS.Workbook();
+  function writeSheet(name, grid) {
+    var ws = workbook.addWorksheet(name);
+    grid.forEach(function (r) { ws.addRow(r); });
+    ws.columns.forEach(function (c) { c.width = 20; });
+    return ws;
+  }
+  writeSheet('Open Overdue Pivot', openOverdueGrid);
+  var wsOpenVsOverdue = writeSheet('Open vs Overdue', openVsOverdueGrid);
+  var wsZoneSummary = writeSheet('Zone Summary', zoneSummaryGrid);
+
+  // Charts are written as NATIVE, editable Excel charts (not baked PNGs) so
+  // bar colors and legend/series names can be changed in Excel. The preview
+  // still uses the renderStyledPng images above; only the embedded file chart
+  // becomes native. Data-linked to the A/B/C columns already on each sheet.
+  var buf = await workbook.xlsx.writeBuffer();
+
+  var placements = [];
+  if (images['Open vs Overdue']) {
+    var oovLast = oovDataRows.length + 1;
+    placements.push({
+      sheetName: 'Open vs Overdue',
+      anchor: { fromCol: 4, fromRow: 3, toCol: 13, toRow: 20 }, // ~"E4"
+      def: {
+        grouping: 'stacked', legend: true, title: 'Open vs Overdue Risks',
+        chartBg: '000000', plotBg: '000000', axisColor: 'FFFFFF',
+        dataLabels: { position: 'ctr', color: 'FFFFFF' },
+        categories: { ref: "'Open vs Overdue'!$A$2:$A$" + oovLast, cache: oovZones },
+        series: [
+          { name: { ref: "'Open vs Overdue'!$B$1", lit: 'Open' },
+            values: { ref: "'Open vs Overdue'!$B$2:$B$" + oovLast, cache: oovOpen }, color: '156082' },
+          { name: { ref: "'Open vs Overdue'!$C$1", lit: 'Overdue' },
+            values: { ref: "'Open vs Overdue'!$C$2:$C$" + oovLast, cache: oovOverdue }, color: 'C00000' },
+        ],
+      },
+    });
+  }
+  if (images['Zone Summary']) {
+    var zsLast = zsDataRows.length + 1;
+    placements.push({
+      sheetName: 'Zone Summary',
+      anchor: { fromCol: 4, fromRow: 3, toCol: 13, toRow: 20 }, // ~"E4"
+      def: {
+        grouping: 'stacked', legend: true, title: 'Zone wise Risks',
+        chartBg: '000000', plotBg: '000000', axisColor: 'FFFFFF',
+        dataLabels: { position: 'ctr', color: 'FFFFFF' },
+        categories: { ref: "'Zone Summary'!$A$2:$A$" + zsLast, cache: zsZones },
+        series: [
+          { name: { ref: "'Zone Summary'!$B$1", lit: 'Total Risks' },
+            values: { ref: "'Zone Summary'!$B$2:$B$" + zsLast, cache: zsTotal }, color: '156082' },
+          { name: { ref: "'Zone Summary'!$C$1", lit: 'Open Risks' },
+            values: { ref: "'Zone Summary'!$C$2:$C$" + zsLast, cache: zsOpen }, color: 'F26C23' },
+        ],
+      },
+    });
+  }
+  if (placements.length && window.NativeChartInject && window.fflate) {
+    try { buf = window.NativeChartInject.inject(new Uint8Array(buf), placements); }
+    catch (e) { console.error('s3d native chart inject failed, file keeps data without native chart:', e); }
+  }
+
+  return {
+    ok: true,
+    files: [{
+      name: 'Risk_Output.xlsx',
+      bytes: buf,
+      sheets: [
+        { name: 'Open Overdue Pivot', grid: openOverdueGrid },
+        { name: 'Open vs Overdue', grid: openVsOverdueGrid },
+        { name: 'Zone Summary', grid: zoneSummaryGrid },
+      ],
+    }],
+    chartImages: images,
+  };
 };
 
 // ── Inlined: reports/s4.js ───────────────────────────────────────────────
 window.Reports.s4 = async function s4(wb) {
-  var E = window.ReportEngine, B = window.ReportBridge;
-  var YEAR=2026,OPEN_STAGES={'Evaluation':1,'Identified':1,'Treatment':1},CLOSED_STAGE='Monitoring';
-  var BASELINE_LABEL="Baseline '25",BASELINE_OPEN_RISK=536,BASELINE_CLOSED_RISK=42,BASELINE_TOTAL_RISK=578;
-  var TARGET_LABEL="Target '26",TARGET_PERCENT=0.80;
-  var SEED_ROWS=[{Month:"Q1 '26",'Open risk as on date':655,'Closed Risk in 2026':41,'Total Risk':696,'Risk Created in 2026':118},{Month:"Apr '26",'Open risk as on date':694,'Closed Risk in 2026':42,'Total Risk':736,'Risk Created in 2026':158}];
-  var MONTH_ABBR=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  var sheet=E.readSheet(wb,'OneTrust - Risk Export');
-  var cleanedHeaders=sheet.headers.map(function(h){return String(h).replace(/\r/g,'').replace(/\n/g,'').trim();});
-  var rows=sheet.rows.map(function(row){var out={};sheet.headers.forEach(function(h,i){out[cleanedHeaders[i]]=row[h];});return out;});
-  var lookup={};cleanedHeaders.forEach(function(c){lookup[c.toLowerCase()]=c;});
-  function findRequiredColumn(name){var key=lookup[name.toLowerCase()];if(!key)throw new Error("Required column '"+name+"' was not found.");return key;}
-  function findOptionalColumn(name){return lookup[name.toLowerCase()]||null;}
-  var stageCol=findRequiredColumn('Stage'),dateCreatedCol=findOptionalColumn('Date created'),dateClosedCol=findOptionalColumn('Date closed');
-  rows.forEach(function(r){r[stageCol]=E.isBlank(r[stageCol])?'':String(r[stageCol]).replace(/\r/g,'').replace(/\n/g,'').trim();});
-  var openRisk=rows.filter(function(r){return OPEN_STAGES.hasOwnProperty(r[stageCol]);}).length;
-  var closedRisk=dateClosedCol?rows.filter(function(r){return r[stageCol]===CLOSED_STAGE&&E.excelYear(r[dateClosedCol])===YEAR;}).length:rows.filter(function(r){return r[stageCol]===CLOSED_STAGE;}).length;
-  var totalRisk=openRisk+closedRisk,riskCreated=dateCreatedCol?rows.filter(function(r){return E.excelYear(r[dateCreatedCol])===YEAR;}).length:0;
-  var targetValue=Math.round(totalRisk*TARGET_PERCENT);
-  function getPeriodLabel(){var dates=[];[dateCreatedCol,dateClosedCol].forEach(function(col){if(!col)return;var years=rows.map(function(r){return E.excelDateInfo(r[col]);}).filter(function(d){return d&&d.year===YEAR;});if(years.length){var maxD=years.reduce(function(a,b){if(a.year!==b.year)return a.year>b.year?a:b;if(a.month!==b.month)return a.month>b.month?a:b;return a.day>=b.day?a:b;});dates.push(maxD);}});if(!dates.length)throw new Error('No valid '+YEAR+' dates found in Date created/Date closed columns.');var latest=dates.reduce(function(a,b){if(a.year!==b.year)return a.year>b.year?a:b;if(a.month!==b.month)return a.month>b.month?a:b;return a.day>=b.day?a:b;});var abbr=MONTH_ABBR[latest.month-1];return abbr==='Mar'?"Q1 '26":(abbr+" '26");}
+  var E = window.ReportEngine;
+  var B = window.ReportBridge;
+
+  var YEAR = 2026;
+  var OPEN_STAGES = { 'Evaluation': 1, 'Identified': 1, 'Treatment': 1 };
+  var CLOSED_STAGE = 'Monitoring';
+  var BASELINE_LABEL = "Baseline '25";
+  var BASELINE_OPEN_RISK = 536, BASELINE_CLOSED_RISK = 42, BASELINE_TOTAL_RISK = 578;
+  var TARGET_LABEL = "Target '26";
+  var TARGET_PERCENT = 0.80;
+  var SEED_ROWS = [
+    { Month: "Q1 '26", 'Open risk as on date': 655, 'Closed Risk in 2026': 41, 'Total Risk': 696, 'Risk Created in 2026': 118 },
+    { Month: "Apr '26", 'Open risk as on date': 694, 'Closed Risk in 2026': 42, 'Total Risk': 736, 'Risk Created in 2026': 158 },
+  ];
+  var MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  var sheet = E.readSheet(wb, 'OneTrust - Risk Export');
+  var cleanedHeaders = sheet.headers.map(function (h) { return String(h).replace(/\r/g, '').replace(/\n/g, '').trim(); });
+  var rows = sheet.rows.map(function (row) {
+    var out = {};
+    sheet.headers.forEach(function (h, i) { out[cleanedHeaders[i]] = row[h]; });
+    return out;
+  });
+  var lookup = {};
+  cleanedHeaders.forEach(function (c) { lookup[c.toLowerCase()] = c; });
+  function findRequiredColumn(name) {
+    var key = lookup[name.toLowerCase()];
+    if (!key) throw new Error("Required column '" + name + "' was not found.");
+    return key;
+  }
+  function findOptionalColumn(name) { return lookup[name.toLowerCase()] || null; }
+
+  var stageCol = findRequiredColumn('Stage');
+  var dateCreatedCol = findOptionalColumn('Date created');
+  var dateClosedCol = findOptionalColumn('Date closed');
+
+  rows.forEach(function (r) {
+    r[stageCol] = E.isBlank(r[stageCol]) ? '' : String(r[stageCol]).replace(/\r/g, '').replace(/\n/g, '').trim();
+  });
+
+  var openRisk = rows.filter(function (r) { return OPEN_STAGES.hasOwnProperty(r[stageCol]); }).length;
+  var closedRisk;
+  if (dateClosedCol) {
+    closedRisk = rows.filter(function (r) { return r[stageCol] === CLOSED_STAGE && E.excelYear(r[dateClosedCol]) === YEAR; }).length;
+  } else {
+    closedRisk = rows.filter(function (r) { return r[stageCol] === CLOSED_STAGE; }).length;
+  }
+  var totalRisk = openRisk + closedRisk;
+  var riskCreated = dateCreatedCol ? rows.filter(function (r) { return E.excelYear(r[dateCreatedCol]) === YEAR; }).length : 0;
+  var targetValue = Math.round(totalRisk * TARGET_PERCENT);
+
+  function getPeriodLabel() {
+    var dates = [];
+    [dateCreatedCol, dateClosedCol].forEach(function (col) {
+      if (!col) return;
+      var years = rows.map(function (r) { return E.excelDateInfo(r[col]); }).filter(function (d) { return d && d.year === YEAR; });
+      if (years.length) {
+        var maxD = years.reduce(function (a, b) {
+          if (a.year !== b.year) return a.year > b.year ? a : b;
+          if (a.month !== b.month) return a.month > b.month ? a : b;
+          return a.day >= b.day ? a : b;
+        });
+        dates.push(maxD);
+      }
+    });
+    if (!dates.length) throw new Error('No valid ' + YEAR + ' dates found in Date created/Date closed columns.');
+    var latest = dates.reduce(function (a, b) {
+      if (a.year !== b.year) return a.year > b.year ? a : b;
+      if (a.month !== b.month) return a.month > b.month ? a : b;
+      return a.day >= b.day ? a : b;
+    });
+    var abbr = MONTH_ABBR[latest.month - 1];
+    return abbr === 'Mar' ? "Q1 '26" : (abbr + " '26");
+  }
+
   var periodLabel;
-  if(dateCreatedCol||dateClosedCol){periodLabel=getPeriodLabel();}else{var now=new Date();var abbr=MONTH_ABBR[now.getMonth()];periodLabel=abbr==='Mar'?"Q1 '26":(abbr+" '"+String(now.getFullYear()).slice(2));}
-  var processedOn=(function(){var d=new Date();function pad(n){return String(n).padStart(2,'0');}return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());})();
-  var metrics={Month:periodLabel,'Open risk as on date':openRisk,'Closed Risk in 2026':closedRisk,'Total Risk':totalRisk,'Risk Created in 2026':riskCreated,'Target 80%':targetValue,'Closed %':totalRisk?closedRisk/totalRisk:0,'Input File':'workbook.xlsx','Processed On':processedOn};
-  var HIST_COLS=['Month','Open risk as on date','Closed Risk in 2026','Total Risk','Risk Created in 2026','Target 80%','Closed %','Input File','Processed On'];
-  var history=SEED_ROWS.map(function(r){var row=Object.assign({},r);row['Target 80%']=Math.round(row['Total Risk']*TARGET_PERCENT);row['Closed %']=row['Closed Risk in 2026']/row['Total Risk'];row['Input File']='Seed from sample image';row['Processed On']=processedOn;return row;});
-  var alreadyPresent=history.some(function(r){return String(r.Month)===String(metrics.Month);});
-  if(!alreadyPresent)history=history.concat([metrics]);
-  function periodSortKey(label){label=String(label);if(label.indexOf('Q1')===0)return 3;var m=label.match(/^([A-Za-z]{3})/);var order={Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};return m?(order[m[1]]||99):99;}
-  var sortedHistory=history.slice().sort(function(a,b){return periodSortKey(a.Month)-periodSortKey(b.Month);});
-  var graphHistory=sortedHistory.slice(-3),periodLabels=graphHistory.map(function(r){return r.Month;}),targetForTable=Math.round(totalRisk*TARGET_PERCENT);
-  var wideColumns=[BASELINE_LABEL].concat(periodLabels,[TARGET_LABEL]);
-  var rowOpen=[BASELINE_OPEN_RISK].concat(graphHistory.map(function(r){return r['Open risk as on date'];}),['']);
-  var rowClosed=[BASELINE_CLOSED_RISK].concat(graphHistory.map(function(r){return r['Closed Risk in 2026'];}),['']);
-  var rowTotal=[BASELINE_TOTAL_RISK].concat(graphHistory.map(function(r){return r['Total Risk'];}),['']);
-  var rowBlank=wideColumns.map(function(){return'';});
-  var rowCreated=[0].concat(graphHistory.map(function(r){return r['Risk Created in 2026'];}),['']);
-  var rowBaseline=[BASELINE_TOTAL_RISK].concat(periodLabels.map(function(){return BASELINE_TOTAL_RISK;}),['']);
-  var tableRows=[['1. Open risk as on date'].concat(rowOpen),['Closed Risk in 2026'].concat(rowClosed),['Total Risk'].concat(rowTotal),[''].concat(rowBlank),['Risk Created in 2026'].concat(rowCreated),[''].concat(rowBaseline)];
-  var tableHeaders=[''].concat(wideColumns);
-  var calcLabels=[BASELINE_LABEL].concat(periodLabels,[TARGET_LABEL]);
-  var calcValues=[BASELINE_TOTAL_RISK].concat(graphHistory.map(function(r){return r['Open risk as on date'];}),targetForTable);
-  var calcPercents=[''].concat(graphHistory.map(function(r){return r['Closed %'];}),[TARGET_PERCENT]);
-  function setCell0(grid,row,col,value){while(grid.length<=row)grid.push([]);while(grid[row].length<=col)grid[row].push(null);grid[row][col]=value;}
-  var g=[];
-  tableHeaders.forEach(function(h,c){setCell0(g,0,c,h);});
-  tableRows.forEach(function(row,r){row.forEach(function(v,c){setCell0(g,r+1,c,v);});});
-  var startRow=10;setCell0(g,startRow,0,'Calculation used for chart');
-  calcLabels.forEach(function(label,r){var excelRow=startRow+1+r;setCell0(g,excelRow,0,label);setCell0(g,excelRow,1,calcValues[r]);setCell0(g,excelRow,2,calcPercents[r]===''?'':calcPercents[r]);});
-  setCell0(g,startRow+1+calcLabels.length,0,'Note');setCell0(g,startRow+1+calcLabels.length,1,'Target = 80% of latest Total Risk');
-  var chartStart=startRow+10;setCell0(g,chartStart,0,'Chart Label');setCell0(g,chartStart,1,'Chart Value');setCell0(g,chartStart,2,'Percent Label');
-  calcLabels.forEach(function(label,r){var excelRow=chartStart+1+r;setCell0(g,excelRow,0,label);setCell0(g,excelRow,1,calcValues[r]);setCell0(g,excelRow,2,calcPercents[r]===''?'':calcPercents[r]);});
-  var historyHeaderRow=HIST_COLS,historyDataRows=history.map(function(r){return HIST_COLS.map(function(c){return r[c];});});
-  var historyGrid=[historyHeaderRow].concat(historyDataRows);
-  var barColors=calcLabels.map(function(_,i){return(i===0||i===calcLabels.length-1)?'#BFBFBF':'#FFC000';});
-  var progressTraces=[{x:calcLabels,y:calcValues,type:'bar',marker:{color:barColors},text:calcValues.map(String),textposition:'inside',insidetextanchor:'middle',textangle:0,textfont:{color:'#ffffff',size:12}}];
-  var progressLayout={paper_bgcolor:'#000000',plot_bgcolor:'#000000',title:{text:"<b>Cumulative Risk Treatment<br>Progress</b>",font:{color:'#ffffff',size:18}},xaxis:{tickfont:{color:'#ffffff'},linecolor:'#ffffff',showline:true},yaxis:{visible:false},showlegend:false,margin:{t:70,r:20,b:50,l:20}};
-  var progressChartPng=await B.renderStyledPng(progressTraces,progressLayout,720,430);
-  var workbook=new ExcelJS.Workbook(),wsDash=workbook.addWorksheet('Dashboard');
-  g.forEach(function(r){wsDash.addRow(r);}); wsDash.columns.forEach(function(c){c.width=16;});
-  var progId=workbook.addImage({base64:progressChartPng,extension:'png'});wsDash.addImage(progId,{tl:{col:6,row:1},ext:{width:480,height:300}});
-  var wsHistUsed=workbook.addWorksheet('History Used');historyGrid.forEach(function(r){wsHistUsed.addRow(r);});wsHistUsed.columns.forEach(function(c){c.width=16;});
-  var riskOutputBuf=await workbook.xlsx.writeBuffer();
-  var historyWorkbook=new ExcelJS.Workbook(),wsHistOnly=historyWorkbook.addWorksheet('Sheet1');
-  historyGrid.forEach(function(r){wsHistOnly.addRow(r);});wsHistOnly.columns.forEach(function(c){c.width=16;});
-  var historyBuf=await historyWorkbook.xlsx.writeBuffer();
-  return {ok:true,files:[{name:'Risk_Output.xlsx',bytes:riskOutputBuf,sheets:[{name:'Dashboard',grid:g},{name:'History Used',grid:historyGrid}]},{name:'History.xlsx',bytes:historyBuf,sheets:[{name:'Sheet1',grid:historyGrid}]}],chartImages:{'Dashboard':progressChartPng}};
+  if (dateCreatedCol || dateClosedCol) {
+    periodLabel = getPeriodLabel();
+  } else {
+    var now = new Date();
+    var abbr = MONTH_ABBR[now.getMonth()];
+    periodLabel = abbr === 'Mar' ? "Q1 '26" : (abbr + " '" + String(now.getFullYear()).slice(2));
+  }
+
+  var processedOn = (function () {
+    var d = new Date();
+    function pad(n) { return String(n).padStart(2, '0'); }
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  })();
+
+  var metrics = {
+    Month: periodLabel,
+    'Open risk as on date': openRisk,
+    'Closed Risk in 2026': closedRisk,
+    'Total Risk': totalRisk,
+    'Risk Created in 2026': riskCreated,
+    'Target 80%': targetValue,
+    'Closed %': totalRisk ? closedRisk / totalRisk : 0,
+    'Input File': 'workbook.xlsx',
+    'Processed On': processedOn,
+  };
+
+  // load_or_create_history: no persistence across runs (Decision 4) — always
+  // seed fresh, matching the current app's actual (not intended) behavior.
+  var HIST_COLS = ['Month', 'Open risk as on date', 'Closed Risk in 2026', 'Total Risk', 'Risk Created in 2026', 'Target 80%', 'Closed %', 'Input File', 'Processed On'];
+  var history = SEED_ROWS.map(function (r) {
+    var row = Object.assign({}, r);
+    row['Target 80%'] = Math.round(row['Total Risk'] * TARGET_PERCENT);
+    row['Closed %'] = row['Closed Risk in 2026'] / row['Total Risk'];
+    row['Input File'] = 'Seed from sample image';
+    row['Processed On'] = processedOn;
+    return row;
+  });
+
+  // update_history: append only if this month isn't already present.
+  var alreadyPresent = history.some(function (r) { return String(r.Month) === String(metrics.Month); });
+  if (!alreadyPresent) history = history.concat([metrics]);
+
+  // build_dashboard_frames
+  function periodSortKey(label) {
+    label = String(label);
+    if (label.indexOf('Q1') === 0) return 3;
+    var m = label.match(/^([A-Za-z]{3})/);
+    var order = { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
+    return m ? (order[m[1]] || 99) : 99;
+  }
+  var sortedHistory = history.slice().sort(function (a, b) { return periodSortKey(a.Month) - periodSortKey(b.Month); });
+  var graphHistory = sortedHistory.slice(-3);
+  var periodLabels = graphHistory.map(function (r) { return r.Month; });
+  var targetForTable = Math.round(totalRisk * TARGET_PERCENT);
+
+  var wideColumns = [BASELINE_LABEL].concat(periodLabels, [TARGET_LABEL]);
+  var rowOpen = [BASELINE_OPEN_RISK].concat(graphHistory.map(function (r) { return r['Open risk as on date']; }), ['']);
+  var rowClosed = [BASELINE_CLOSED_RISK].concat(graphHistory.map(function (r) { return r['Closed Risk in 2026']; }), ['']);
+  var rowTotal = [BASELINE_TOTAL_RISK].concat(graphHistory.map(function (r) { return r['Total Risk']; }), ['']);
+  var rowBlank = wideColumns.map(function () { return ''; });
+  var rowCreated = [0].concat(graphHistory.map(function (r) { return r['Risk Created in 2026']; }), ['']);
+  var rowBaseline = [BASELINE_TOTAL_RISK].concat(periodLabels.map(function () { return BASELINE_TOTAL_RISK; }), ['']);
+
+  var tableRows = [
+    ['1. Open risk as on date'].concat(rowOpen),
+    ['Closed Risk in 2026'].concat(rowClosed),
+    ['Total Risk'].concat(rowTotal),
+    [''].concat(rowBlank),
+    ['Risk Created in 2026'].concat(rowCreated),
+    [''].concat(rowBaseline),
+  ];
+  var tableHeaders = [''].concat(wideColumns);
+
+  var calcLabels = [BASELINE_LABEL].concat(periodLabels, [TARGET_LABEL]);
+  var calcValues = [BASELINE_TOTAL_RISK].concat(graphHistory.map(function (r) { return r['Open risk as on date']; }), [targetForTable]);
+  var calcPercents = [''].concat(graphHistory.map(function (r) { return r['Closed %']; }), [TARGET_PERCENT]);
+
+  // --- build the Dashboard grid (0-indexed rows/cols, matching xlsxwriter's ws.write(row,col,...)) ---
+  function setCell0(grid, row, col, value) {
+    while (grid.length <= row) grid.push([]);
+    while (grid[row].length <= col) grid[row].push(null);
+    grid[row][col] = value;
+  }
+  var g = [];
+  tableHeaders.forEach(function (h, c) { setCell0(g, 0, c, h); });
+  tableRows.forEach(function (row, r) { row.forEach(function (v, c) { setCell0(g, r + 1, c, v); }); });
+
+  var startRow = 10;
+  setCell0(g, startRow, 0, 'Calculation used for chart');
+  calcLabels.forEach(function (label, r) {
+    var excelRow = startRow + 1 + r;
+    setCell0(g, excelRow, 0, label);
+    setCell0(g, excelRow, 1, calcValues[r]);
+    setCell0(g, excelRow, 2, calcPercents[r] === '' ? '' : calcPercents[r]);
+  });
+  setCell0(g, startRow + 1 + calcLabels.length, 0, 'Note');
+  setCell0(g, startRow + 1 + calcLabels.length, 1, 'Target = 80% of latest Total Risk');
+
+  var chartStart = startRow + 10;
+  setCell0(g, chartStart, 0, 'Chart Label');
+  setCell0(g, chartStart, 1, 'Chart Value');
+  setCell0(g, chartStart, 2, 'Percent Label');
+  calcLabels.forEach(function (label, r) {
+    var excelRow = chartStart + 1 + r;
+    setCell0(g, excelRow, 0, label);
+    setCell0(g, excelRow, 1, calcValues[r]);
+    setCell0(g, excelRow, 2, calcPercents[r] === '' ? '' : calcPercents[r]);
+  });
+
+  var historyHeaderRow = HIST_COLS;
+  var historyDataRows = history.map(function (r) { return HIST_COLS.map(function (c) { return r[c]; }); });
+  var historyGrid = [historyHeaderRow].concat(historyDataRows);
+
+  var files = [
+    { name: 'Risk_Output.xlsx', sheets: [{ name: 'Dashboard', grid: g }, { name: 'History Used', grid: historyGrid }] },
+    { name: 'History.xlsx', sheets: [{ name: 'Sheet1', grid: historyGrid }] },
+  ];
+
+  // Preview chart comes from the History table (matches today's app, which
+  // derives it from History.xlsx, not from the Dashboard's own matrix — see
+  // ReportEngine.selectCharts' 's4' branch). The embedded chart on the
+  // Dashboard sheet reproduces the original xlsxwriter native column chart
+  // instead (black chart/plot area, gray Baseline/Target end-bars, gold
+  // bars in between, white centered value labels, no legend/gridlines).
+  var barColors = calcLabels.map(function (_, i) {
+    return (i === 0 || i === calcLabels.length - 1) ? '#BFBFBF' : '#FFC000';
+  });
+  var progressTraces = [
+    { x: calcLabels, y: calcValues, type: 'bar', marker: { color: barColors },
+      text: calcValues.map(String), textposition: 'inside', insidetextanchor: 'middle', textangle: 0,
+      textfont: { color: '#ffffff', size: 12 } },
+  ];
+  var progressLayout = {
+    paper_bgcolor: '#000000', plot_bgcolor: '#000000',
+    title: { text: "<b>Cumulative Risk Treatment<br>Progress</b>", font: { color: '#ffffff', size: 18 } },
+    xaxis: { tickfont: { color: '#ffffff' }, linecolor: '#ffffff', showline: true },
+    yaxis: { visible: false },
+    showlegend: false,
+    margin: { t: 70, r: 20, b: 50, l: 20 },
+  };
+  var progressChartPng = await B.renderStyledPng(progressTraces, progressLayout, 720, 430);
+
+  var workbook = new ExcelJS.Workbook();
+  var wsDash = workbook.addWorksheet('Dashboard');
+  g.forEach(function (r) { wsDash.addRow(r); });
+  wsDash.columns.forEach(function (c) { c.width = 16; });
+  // Native, editable progress chart (data-linked to a hidden helper block)
+  // replaces the baked PNG: single gold series with the first and last bars
+  // recolored gray (Baseline/Target), white centered labels, no legend.
+  var s4Placements = [];
+  if (window.NativeChartInject && window.fflate && calcLabels.length) {
+    var s4Points = calcLabels.map(function (_, i) {
+      return (i === 0 || i === calcLabels.length - 1) ? { idx: i, color: 'BFBFBF' } : null;
+    }).filter(Boolean);
+    var s4Blk = window.NativeChartInject.buildDataBlock(wsDash, 'Dashboard', calcLabels, [
+      { name: 'Progress', cache: calcValues, color: 'FFC000', points: s4Points },
+    ], 20);
+    s4Placements.push({
+      sheetName: 'Dashboard', anchor: { fromCol: 6, fromRow: 1, toCol: 15, toRow: 20 }, // ~"G2"
+      def: Object.assign({
+        grouping: 'clustered', legend: false, title: 'Cumulative Risk Treatment Progress',
+        chartBg: '000000', plotBg: '000000', axisColor: 'FFFFFF',
+        dataLabels: { position: 'ctr', color: 'FFFFFF' },
+      }, s4Blk),
+    });
+  }
+
+  var wsHistUsed = workbook.addWorksheet('History Used');
+  historyGrid.forEach(function (r) { wsHistUsed.addRow(r); });
+  wsHistUsed.columns.forEach(function (c) { c.width = 16; });
+
+  var riskOutputBuf = await workbook.xlsx.writeBuffer();
+  if (s4Placements.length) {
+    try { riskOutputBuf = window.NativeChartInject.inject(new Uint8Array(riskOutputBuf), s4Placements); }
+    catch (e) { console.error('s4 native chart inject failed:', e); }
+  }
+
+  var historyWorkbook = new ExcelJS.Workbook();
+  var wsHistOnly = historyWorkbook.addWorksheet('Sheet1');
+  historyGrid.forEach(function (r) { wsHistOnly.addRow(r); });
+  wsHistOnly.columns.forEach(function (c) { c.width = 16; });
+  var historyBuf = await historyWorkbook.xlsx.writeBuffer();
+
+  return {
+    ok: true,
+    files: [
+      { name: 'Risk_Output.xlsx', bytes: riskOutputBuf, sheets: [{ name: 'Dashboard', grid: g }, { name: 'History Used', grid: historyGrid }] },
+      { name: 'History.xlsx', bytes: historyBuf, sheets: [{ name: 'Sheet1', grid: historyGrid }] },
+    ],
+    chartImages: { 'Dashboard': progressChartPng },
+  };
 };
 
 // ---------------------------------------------------------------------------
