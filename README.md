@@ -6,16 +6,22 @@ AB InBev TPRM & Risk Intelligence dashboard.
 
 1. Download this repo: **Code → Download ZIP**, then unzip it.
 2. Keep `index.html` next to the `vendor/` and `js/` folders.
-3. **Double-click `index.html`.** Upload your Excel workbook, pick a report, click **Run**.
+3. **Double-click `index.html`.** Build the PRP workbook in **Create PRP**, pick a report, click **Run**.
 
-All reports run in JavaScript in your browser (SheetJS, ExcelJS, Plotly — all
+All steps run in JavaScript in your browser (SheetJS, ExcelJS, Plotly — all
 vendored locally). Charts are generated to match the original Python script
 output exactly. Recommended browsers: Chrome or Edge.
 
 ## Usage
 
-1. Upload `PRP Sample Jun (2).xlsx` using the **Input** file uploader.
-2. Select a **report** from the left sidebar (Vendor Onboarding, Response Time Reduction, etc.).
+1. **Create PRP** (hero section): drop the three raw exports — the filenames
+   are matched automatically (`*risk-export*.xlsx`, `*assessment-export*.xlsx`,
+   `*tprm*`/`*supplier*.xlsx`) — and click **Create PRP workbook**. The
+   consolidated workbook (dates normalised, `Aging`/`Ageing`/`Working1`/
+   `Working2`/`30sep26` formulas added) downloads and is auto-loaded into the
+   pipeline below. Already have a consolidated workbook? Skip this step and
+   upload it directly in Step 2.
+2. Select a **report** from the report drawer (Vendor Onboarding, Response Time Reduction, etc.).
 3. Choose a **variant** if multiple options are available.
 4. Click **Run** to execute the report and preview charts and tables.
 5. Download the generated `.xlsx` report from the **Download Options** section.

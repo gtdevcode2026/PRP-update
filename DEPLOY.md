@@ -12,12 +12,17 @@ Keep these next to each other (this is what makes double-click work):
 ```
 index.html        ← the dashboard UI
 logo.png          ← branding
-vendor/           ← SheetJS, ExcelJS, Plotly (≈6 MB total)
-js/                ← report engine + the 7 report generators
+vendor/           ← SheetJS, ExcelJS, Plotly + GSAP/ScrollTrigger (≈6 MB total)
+js/                ← report engine + PRP builder + the 7 report generators
 ```
 
 Everything else (the `*.py` sources, the sample `.xlsx`) is optional — the
-`.py` files are kept only as a historical reference for the report logic.
+`.py` files (including `create_prp.py`, the Python original of the in-browser
+Create PRP step) are kept only as a reference for the logic.
+
+> `vendor/gsap.min.js` and `vendor/ScrollTrigger.min.js` power the hero
+> animations and are **optional** — the app still boots and works fully if
+> those two files are missing.
 
 ## Publish it to GitHub
 
@@ -36,8 +41,9 @@ git push origin main
 2. **Unzip** it (keep `index.html`, `vendor/`, and `js/` together).
 3. **Double-click `index.html`.**
 
-It opens instantly — no boot delay of any kind. They upload their Excel
-workbook, pick a report, and click **Run** — all offline.
+It opens instantly — no boot delay of any kind. They drop the three raw
+exports into **Create PRP** to build the consolidated workbook (or upload one
+they already have), pick a report, and click **Run** — all offline.
 
 > Alternatively they can `git clone` the repo and open `index.html` — same result.
 
