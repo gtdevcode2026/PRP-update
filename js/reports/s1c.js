@@ -122,23 +122,29 @@ window.Reports.s1c = async function s1c(wb) {
   // Native, editable single-series charts (data-linked to hidden helper
   // blocks) replace the two baked PNGs.
   var placements = [];
-  function s1cPlacement(ws, sheetName, rows, title) {
+  var R = window.NativeChartInject && window.NativeChartInject.ref;
+  // Both tables: header row 1 (A=label, B=Count), data rows 2..1+n. The status
+  // / zone labels sit in column A and are editable there.
+  function s1cPlacement(sheetName, rows, title) {
     var cats = rows.map(function (r) { return r[0]; });
     if (!cats.length) return;
-    var blk = window.NativeChartInject.buildDataBlock(ws, sheetName, cats, [
-      { name: 'Count', cache: rows.map(function (r) { return r[1]; }), color: '4472C4' },
-    ], 20);
+    var last = 1 + cats.length;
     placements.push({
       sheetName: sheetName, anchor: { fromCol: 3, fromRow: 1, toCol: 12, toRow: 18 }, // ~"D2"
-      def: Object.assign({
+      def: {
         grouping: 'clustered', legend: false, title: title,
         axisColor: '000000', dataLabels: { position: 'outEnd', color: '000000' },
-      }, blk),
+        categories: { ref: R(sheetName, 1, 2, last), cache: cats },
+        series: [
+          { name: { ref: R(sheetName, 2, 1, 1), lit: 'Count' },
+            values: { ref: R(sheetName, 2, 2, last), cache: rows.map(function (r) { return r[1]; }) }, color: '4472C4' },
+        ],
+      },
     });
   }
   if (window.NativeChartInject && window.fflate) {
-    s1cPlacement(wsSummary, 'Summary', statusRows, 'Assessment Status Overview');
-    s1cPlacement(wsZone, 'Active by Zone', zoneRows, 'Active by Zone');
+    s1cPlacement('Summary', statusRows, 'Assessment Status Overview');
+    s1cPlacement('Active by Zone', zoneRows, 'Active by Zone');
   }
 
   var buf = await workbook.xlsx.writeBuffer();

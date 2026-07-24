@@ -180,31 +180,44 @@ window.Reports.d2 = async function d2(wb) {
   // two baked PNGs: org = stacked column, kpi = horizontal percent bar.
   var placements = [];
   if (window.NativeChartInject && window.fflate) {
+    var R = window.NativeChartInject.ref;
     if (orgLabels.length) {
-      var orgBlk = window.NativeChartInject.buildDataBlock(ws, 'Dashboard', orgLabels, [
-        { name: 'Open', cache: openVals, color: '00AEEF' },
-        { name: 'Closed', cache: closedVals, color: 'D4AF37' },
-      ], 20);
+      // Org pivot: header row 4 (B=Open, C=Closed), data rows 5..4+n. The chart
+      // excludes the appended Grand Total row (pivotRows only). Labels editable
+      // in column A; legend names editable via B4/C4.
+      var orgLast = 4 + pivotRows.length;
       placements.push({
         sheetName: 'Dashboard', anchor: { fromCol: 5, fromRow: 1, toCol: 14, toRow: 20 }, // ~"F2"
-        def: Object.assign({
+        def: {
           grouping: 'stacked', legend: true, title: '2026 Assessment (' + closedTotal + '/' + recordTotal + ')',
           chartBg: '000000', plotBg: '000000', axisColor: 'FFFFFF',
           dataLabels: { position: 'ctr', color: 'FFFFFF' },
-        }, orgBlk),
+          categories: { ref: R('Dashboard', 1, 5, orgLast), cache: orgLabels },
+          series: [
+            { name: { ref: R('Dashboard', 2, 4, 4), lit: 'Open' },
+              values: { ref: R('Dashboard', 2, 5, orgLast), cache: openVals }, color: '00AEEF' },
+            { name: { ref: R('Dashboard', 3, 4, 4), lit: 'Closed' },
+              values: { ref: R('Dashboard', 3, 5, orgLast), cache: closedVals }, color: 'D4AF37' },
+          ],
+        },
       });
     }
     if (kpiMetrics.length) {
-      var kpiBlk = window.NativeChartInject.buildDataBlock(ws, 'Dashboard', kpiMetrics, [
-        { name: 'Improvement', cache: kpiValues, color: '4472C4' },
-      ], 27);
+      // KPI block: header at kpiStartRow (A=Metric, B=Value), data rows below.
+      // The Baseline/Q1/Q2/Target labels sit in column A and are editable there.
+      var kpiFirst = kpiStartRow + 1, kpiLast = kpiStartRow + kpiMetrics.length;
       placements.push({
         sheetName: 'Dashboard', anchor: { fromCol: 5, fromRow: 22, toCol: 14, toRow: 40 }, // ~"F23"
-        def: Object.assign({
+        def: {
           grouping: 'clustered', barDir: 'bar', catReversed: true, legend: false,
           title: 'Improve in Supplier Response Time', valNumFmt: '0%',
           dataLabels: { position: 'outEnd', numFmt: '0%', color: '000000' },
-        }, kpiBlk),
+          categories: { ref: R('Dashboard', 1, kpiFirst, kpiLast), cache: kpiMetrics },
+          series: [
+            { name: { ref: R('Dashboard', 2, kpiStartRow, kpiStartRow), lit: 'Improvement' },
+              values: { ref: R('Dashboard', 2, kpiFirst, kpiLast), cache: kpiValues }, color: '4472C4' },
+          ],
+        },
       });
     }
   }

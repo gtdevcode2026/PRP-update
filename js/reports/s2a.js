@@ -249,25 +249,32 @@ window.Reports.s2a = async function s2a(wb) {
   // Native, editable stacked charts (data-linked to hidden helper blocks)
   // replace the two baked PNGs. Series: Closed (blue) + Open (orange).
   var placements = [];
-  function s2aPlacement(ws, sheetName, zoneArr, title) {
+  var R = window.NativeChartInject && window.NativeChartInject.ref;
+  // headerRow: g2's zone table header is row 8 (data 9..), g3's is row 9 (data 10..).
+  // Zone labels sit in column A (editable there); B=Closed, C=Open.
+  function s2aPlacement(sheetName, zoneArr, title, headerRow) {
     var zones = zoneArr.map(function (z) { return z.zone; });
     if (!zones.length) return;
-    var blk = window.NativeChartInject.buildDataBlock(ws, sheetName, zones, [
-      { name: 'Closed', cache: zoneArr.map(function (z) { return z.closed; }), color: '2F75B5' },
-      { name: 'Open', cache: zoneArr.map(function (z) { return z.open; }), color: 'ED7D31' },
-    ], 20);
+    var first = headerRow + 1, last = headerRow + zones.length;
     placements.push({
       sheetName: sheetName, anchor: { fromCol: 5, fromRow: 1, toCol: 15, toRow: 20 }, // ~"F2"
-      def: Object.assign({
+      def: {
         grouping: 'stacked', legend: true, title: title,
         axisColor: '000000', dataLabels: { position: 'ctr', color: 'FFFFFF' },
-      }, blk),
+        categories: { ref: R(sheetName, 1, first, last), cache: zones },
+        series: [
+          { name: { lit: 'Closed' },
+            values: { ref: R(sheetName, 2, first, last), cache: zoneArr.map(function (z) { return z.closed; }) }, color: '2F75B5' },
+          { name: { lit: 'Open' },
+            values: { ref: R(sheetName, 3, first, last), cache: zoneArr.map(function (z) { return z.open; }) }, color: 'ED7D31' },
+        ],
+      },
     });
   }
   if (window.NativeChartInject && window.fflate) {
-    s2aPlacement(ws2, 'Auto Open Closed', zoneSummary, totalOpen + '/' + totalAll + ' Open Assessment');
-    s2aPlacement(ws3, sheetName3, overdueZone,
-      totalOverdueOpen + '/' + totalOverdue + ' Overdue Open Assessment (' + OVERDUE_THRESHOLD + '+ days)');
+    s2aPlacement('Auto Open Closed', zoneSummary, totalOpen + '/' + totalAll + ' Open Assessment', 8);
+    s2aPlacement(sheetName3, overdueZone,
+      totalOverdueOpen + '/' + totalOverdue + ' Overdue Open Assessment (' + OVERDUE_THRESHOLD + '+ days)', 9);
   }
 
   var buf = await workbook.xlsx.writeBuffer();

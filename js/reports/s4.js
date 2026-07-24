@@ -238,19 +238,25 @@ window.Reports.s4 = async function s4(wb) {
   // recolored gray (Baseline/Target), white centered labels, no legend.
   var s4Placements = [];
   if (window.NativeChartInject && window.fflate && calcLabels.length) {
+    // Reference the "Chart Label/Chart Value" block: header at Excel row
+    // chartStart+1, data rows chartStart+2 .. The bar labels are editable in
+    // column A of that block. First/last bars are recolored gray (per-point).
+    var R = window.NativeChartInject.ref, s4First = chartStart + 2, s4Last = chartStart + 1 + calcLabels.length;
     var s4Points = calcLabels.map(function (_, i) {
       return (i === 0 || i === calcLabels.length - 1) ? { idx: i, color: 'BFBFBF' } : null;
     }).filter(Boolean);
-    var s4Blk = window.NativeChartInject.buildDataBlock(wsDash, 'Dashboard', calcLabels, [
-      { name: 'Progress', cache: calcValues, color: 'FFC000', points: s4Points },
-    ], 20);
     s4Placements.push({
       sheetName: 'Dashboard', anchor: { fromCol: 6, fromRow: 1, toCol: 15, toRow: 20 }, // ~"G2"
-      def: Object.assign({
+      def: {
         grouping: 'clustered', legend: false, title: 'Cumulative Risk Treatment Progress',
         chartBg: '000000', plotBg: '000000', axisColor: 'FFFFFF',
         dataLabels: { position: 'ctr', color: 'FFFFFF' },
-      }, s4Blk),
+        categories: { ref: R('Dashboard', 1, s4First, s4Last), cache: calcLabels },
+        series: [
+          { name: { lit: 'Progress' },
+            values: { ref: R('Dashboard', 2, s4First, s4Last), cache: calcValues }, color: 'FFC000', points: s4Points },
+        ],
+      },
     });
   }
 

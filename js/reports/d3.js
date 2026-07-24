@@ -99,20 +99,25 @@ window.Reports.d3 = async function d3(wb) {
   // replaces the baked PNG. Dynamic series come from the pivot headers.
   var placements = [];
   if (window.NativeChartInject && window.fflate && pivot.indexVals.length) {
+    // Summary grid: header row 1 (A=Region, B..=pivot headers, last col=Grand
+    // Total); data rows 2..1+N (the appended Grand Total row is excluded).
+    // Region labels are editable in column A; legend names via each header cell.
+    var R = window.NativeChartInject.ref, N = pivot.indexVals.length, last = 1 + N;
     var d3Series = pivot.headers.map(function (colName, idx) {
+      var col = 2 + idx; // A=1 is Region; headers start at B
       return {
-        name: colName,
-        cache: pivot.rows.map(function (r) { return r[idx]; }),
+        name: { ref: R('Summary', col, 1, 1), lit: colName },
+        values: { ref: R('Summary', col, 2, last), cache: pivot.rows.map(function (r) { return r[idx]; }) },
         color: (D3_COLORS[colName] || '#4472C4').replace('#', ''),
       };
     });
-    var d3Blk = window.NativeChartInject.buildDataBlock(ws, 'Summary', pivot.indexVals, d3Series, 20);
     placements.push({
       sheetName: 'Summary', anchor: { fromCol: 7, fromRow: 4, toCol: 16, toRow: 21 }, // ~"H5"
-      def: Object.assign({
-        grouping: 'stacked', legend: true, title: 'Assessments Completed vs Open',
-        axisColor: '000000',
-      }, d3Blk),
+      def: {
+        grouping: 'stacked', legend: true, title: 'Assessments Completed vs Open', axisColor: '000000',
+        categories: { ref: R('Summary', 1, 2, last), cache: pivot.indexVals },
+        series: d3Series,
+      },
     });
   }
 

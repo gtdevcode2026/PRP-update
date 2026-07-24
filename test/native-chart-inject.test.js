@@ -68,21 +68,9 @@ const NCI = require('../js/native-chart-inject.js');
   // content types must cover BOTH drawings
   assert.equal((d2('[Content_Types].xml').match(/officedocument\.drawing\+xml/g) || []).length, 2, 'two drawing content-types');
 
-  // --- buildDataBlock: writes hidden helper columns + returns cell refs ---
-  const wb3 = new ExcelJS.Workbook();
-  const s = wb3.addWorksheet('S'); s.addRow(['h1', 'h2']); s.addRow([1, 2]);
-  const block = NCI.buildDataBlock(s, 'S', ['a', 'b', 'c'], [
-    { name: 'Open', cache: [1, 2, 3], color: '156082' },
-    { name: 'Overdue', cache: [4, 5, 6], color: 'C00000' },
-  ]);
-  assert.ok(/^'S'!\$[A-Z]+\$1:\$[A-Z]+\$3$/.test(block.categories.ref), 'categories ref shape: ' + block.categories.ref);
-  assert.equal(block.series.length, 2, 'two series');
-  assert.equal(block.series[0].name.lit, 'Open', 'series name literal');
-  assert.deepEqual(block.series[1].values.cache, [4, 5, 6], 'series cache preserved');
-  // the referenced column must be hidden and hold the data
-  const catCol = block.categories.ref.match(/\$([A-Z]+)\$1/)[1];
-  const colNum = catCol.split('').reduce((a, ch) => a * 26 + (ch.charCodeAt(0) - 64), 0);
-  assert.equal(s.getColumn(colNum).hidden, true, 'category helper column hidden');
-  assert.equal(s.getCell(2, colNum).value, 'b', 'category value written');
+  // --- ref: builds absolute A1 ranges pointing at visible table cells ---
+  assert.equal(NCI.ref('Summary', 2, 3, 8), "'Summary'!$B$3:$B$8", 'multi-cell ref');
+  assert.equal(NCI.ref('Summary', 1, 1, 1), "'Summary'!$A$1", 'single-cell ref');
+  assert.equal(NCI.ref('Auto Open Closed', 3, 9, 12), "'Auto Open Closed'!$C$9:$C$12", 'quoted sheet name');
   console.log('NativeChartInject: all assertions passed');
 })().catch((e) => { console.error(e); process.exit(1); });

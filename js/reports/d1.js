@@ -89,17 +89,24 @@ window.Reports.d1 = async function d1(wb) {
   // place of the baked PNG. The preview still uses images['Final Table'].
   var placements = [];
   if (window.NativeChartInject && window.fflate && zones.length) {
-    var blk = window.NativeChartInject.buildDataBlock(ws, 'Final Table', zones, [
-      { name: 'Tier-1 Supplier', cache: tier1Vals, color: '1F77B4' },
-      { name: 'Supplier Added by Zone', cache: addedVals, color: 'FF7F0E' },
-    ], 20);
+    // Data-link to the visible Final Table cells (A=zone, B/C=series) so the
+    // zone labels + legend names are editable directly in Excel. Rows 2..1+n
+    // are the chart rows (the appended Total row is excluded).
+    var R = window.NativeChartInject.ref, last = zones.length + 1;
     placements.push({
       sheetName: 'Final Table', anchor: { fromCol: 4, fromRow: 1, toCol: 13, toRow: 18 }, // ~"E2"
-      def: Object.assign({
+      def: {
         grouping: 'stacked', legend: true, title: '(' + tier1Sum + ') Zone wise Tier 1 Suppliers',
         chartBg: '000000', plotBg: '000000', axisColor: 'FFFFFF',
         dataLabels: { position: 'ctr', color: 'FFFFFF' },
-      }, blk),
+        categories: { ref: R('Final Table', 1, 2, last), cache: zones },
+        series: [
+          { name: { ref: R('Final Table', 2, 1, 1), lit: 'Tier-1 Supplier' },
+            values: { ref: R('Final Table', 2, 2, last), cache: tier1Vals }, color: '1F77B4' },
+          { name: { ref: R('Final Table', 3, 1, 1), lit: 'Supplier Added by Zone' },
+            values: { ref: R('Final Table', 3, 2, last), cache: addedVals }, color: 'FF7F0E' },
+        ],
+      },
     });
   }
 

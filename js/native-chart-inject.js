@@ -147,34 +147,14 @@
     while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - m - 1) / 26); }
     return s;
   }
-  function buildDataBlock(ws, sheetName, categories, series, startColOpt) {
-    var startCol = startColOpt || ((ws.columnCount || 0) + 2); // 1-based, leave a gap
-    var n = categories.length;
-    for (var i = 0; i < n; i++) ws.getCell(i + 1, startCol).value = categories[i];
-    ws.getColumn(startCol).hidden = true;
-    var catL = colLetter(startCol);
-    var outSeries = series.map(function (s, si) {
-      var col = startCol + 1 + si;
-      for (var r = 0; r < n; r++) {
-        var v = s.cache[r];
-        ws.getCell(r + 1, col).value = (v === '' || v === null || v === undefined) ? 0 : v;
-      }
-      ws.getColumn(col).hidden = true;
-      var cl = colLetter(col);
-      return {
-        name: { lit: s.name },
-        values: { ref: "'" + sheetName + "'!$" + cl + "$1:$" + cl + "$" + n, cache: s.cache },
-        color: s.color,
-        points: s.points,
-      };
-    });
-    return {
-      categories: { ref: "'" + sheetName + "'!$" + catL + "$1:$" + catL + "$" + n, cache: categories },
-      series: outSeries,
-    };
+  // Builds an absolute A1 range string pointing at a report's VISIBLE table
+  // cells, e.g. ref('Summary', 2, 3, 8) -> "'Summary'!$B$3:$B$8". Charts use
+  // these so category/series labels are editable by editing the table cell.
+  function ref(sheet, col1, row1, row2) {
+    var c = colLetter(col1);
+    return "'" + sheet + "'!$" + c + "$" + row1 + (row2 && row2 !== row1 ? ':$' + c + '$' + row2 : '');
   }
-
-  var API = { inject: inject, buildDataBlock: buildDataBlock, _colLetter: colLetter };
+  var API = { inject: inject, ref: ref, _colLetter: colLetter };
   root.NativeChartInject = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : globalThis);
