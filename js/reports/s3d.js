@@ -196,16 +196,55 @@ window.Reports.s3d = async function s3d(wb) {
   var wsOpenVsOverdue = writeSheet('Open vs Overdue', openVsOverdueGrid);
   var wsZoneSummary = writeSheet('Zone Summary', zoneSummaryGrid);
 
+  // Charts are written as NATIVE, editable Excel charts (not baked PNGs) so
+  // bar colors and legend/series names can be changed in Excel. The preview
+  // still uses the renderStyledPng images above; only the embedded file chart
+  // becomes native. Data-linked to the A/B/C columns already on each sheet.
+  var buf = await workbook.xlsx.writeBuffer();
+
+  var placements = [];
   if (images['Open vs Overdue']) {
-    var id1 = workbook.addImage({ base64: images['Open vs Overdue'], extension: 'png' });
-    wsOpenVsOverdue.addImage(id1, { tl: { col: 4, row: 3 }, ext: { width: 480, height: 280 } }); // ~"E4"
+    var oovLast = oovDataRows.length + 1;
+    placements.push({
+      sheetName: 'Open vs Overdue',
+      anchor: { fromCol: 4, fromRow: 3, toCol: 13, toRow: 20 }, // ~"E4"
+      def: {
+        grouping: 'stacked', legend: true, title: 'Open vs Overdue Risks',
+        chartBg: '000000', plotBg: '000000', axisColor: 'FFFFFF',
+        dataLabels: { position: 'ctr', color: 'FFFFFF' },
+        categories: { ref: "'Open vs Overdue'!$A$2:$A$" + oovLast, cache: oovZones },
+        series: [
+          { name: { ref: "'Open vs Overdue'!$B$1", lit: 'Open' },
+            values: { ref: "'Open vs Overdue'!$B$2:$B$" + oovLast, cache: oovOpen }, color: '156082' },
+          { name: { ref: "'Open vs Overdue'!$C$1", lit: 'Overdue' },
+            values: { ref: "'Open vs Overdue'!$C$2:$C$" + oovLast, cache: oovOverdue }, color: 'C00000' },
+        ],
+      },
+    });
   }
   if (images['Zone Summary']) {
-    var id2 = workbook.addImage({ base64: images['Zone Summary'], extension: 'png' });
-    wsZoneSummary.addImage(id2, { tl: { col: 4, row: 3 }, ext: { width: 480, height: 280 } }); // ~"E4"
+    var zsLast = zsDataRows.length + 1;
+    placements.push({
+      sheetName: 'Zone Summary',
+      anchor: { fromCol: 4, fromRow: 3, toCol: 13, toRow: 20 }, // ~"E4"
+      def: {
+        grouping: 'stacked', legend: true, title: 'Zone wise Risks',
+        chartBg: '000000', plotBg: '000000', axisColor: 'FFFFFF',
+        dataLabels: { position: 'ctr', color: 'FFFFFF' },
+        categories: { ref: "'Zone Summary'!$A$2:$A$" + zsLast, cache: zsZones },
+        series: [
+          { name: { ref: "'Zone Summary'!$B$1", lit: 'Total Risks' },
+            values: { ref: "'Zone Summary'!$B$2:$B$" + zsLast, cache: zsTotal }, color: '156082' },
+          { name: { ref: "'Zone Summary'!$C$1", lit: 'Open Risks' },
+            values: { ref: "'Zone Summary'!$C$2:$C$" + zsLast, cache: zsOpen }, color: 'F26C23' },
+        ],
+      },
+    });
   }
-
-  var buf = await workbook.xlsx.writeBuffer();
+  if (placements.length && window.NativeChartInject && window.fflate) {
+    try { buf = window.NativeChartInject.inject(new Uint8Array(buf), placements); }
+    catch (e) { console.error('s3d native chart inject failed, file keeps data without native chart:', e); }
+  }
 
   return {
     ok: true,

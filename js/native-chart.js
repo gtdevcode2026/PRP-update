@@ -76,8 +76,11 @@
     var sers = def.series.map(function (s, i) { return seriesXml(s, i, def.categories, dl); }).join('');
     var overlap = def.grouping === 'stacked' ? '<c:overlap val="100"/>' : '<c:overlap val="-27"/>';
     var gap = '<c:gapWidth val="' + (def.grouping === 'stacked' ? 50 : 150) + '"/>';
+    var titleRPr = def.axisColor
+      ? '<a:rPr lang="en-US" b="1"><a:solidFill><a:srgbClr val="' + def.axisColor + '"/></a:solidFill></a:rPr>'
+      : '<a:rPr lang="en-US" b="1"/>';
     var title = def.title
-      ? '<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>' + esc(def.title) +
+      ? '<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r>' + titleRPr + '<a:t>' + esc(def.title) +
         '</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>'
       : '<c:autoTitleDeleted val="1"/>';
     var legend = def.legend

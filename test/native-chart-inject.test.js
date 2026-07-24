@@ -35,5 +35,37 @@ const NCI = require('../js/native-chart-inject.js');
   assert.ok(files['xl/worksheets/_rels/sheet1.xml.rels'], 'sheet rels added');
   assert.ok(d('xl/worksheets/_rels/sheet1.xml.rels').includes('drawings/drawing1.xml'), 'sheet->drawing rel');
   assert.ok(d('xl/drawings/_rels/drawing1.xml.rels').includes('charts/chart1.xml'), 'drawing->chart rel');
+
+  // --- multi-sheet regression: two charts on two different sheets must get
+  //     DISTINCT drawing parts, each linked to its own chart. ---
+  const wb2 = new ExcelJS.Workbook();
+  const a = wb2.addWorksheet('A'); a.addRow(['k', 'v']); a.addRow(['x', 1]); a.addRow(['y', 2]);
+  const b = wb2.addWorksheet('B'); b.addRow(['k', 'v']); b.addRow(['p', 3]); b.addRow(['q', 4]);
+  const buf2 = await wb2.xlsx.writeBuffer();
+  const mk = (sheet, color) => ({
+    grouping: 'clustered', legend: false,
+    categories: { ref: "'" + sheet + "'!$A$2:$A$3", cache: ['a', 'b'] },
+    series: [{ name: { lit: 'v' }, values: { ref: "'" + sheet + "'!$B$2:$B$3", cache: [1, 2] }, color }],
+  });
+  const out2 = NCI.inject(new Uint8Array(buf2), [
+    { sheetName: 'A', def: mk('A', '111111'), anchor: { fromCol: 3, fromRow: 0, toCol: 10, toRow: 12 } },
+    { sheetName: 'B', def: mk('B', '222222'), anchor: { fromCol: 3, fromRow: 0, toCol: 10, toRow: 12 } },
+  ]);
+  const f2 = fflate.unzipSync(out2);
+  const d2 = (p) => new TextDecoder().decode(f2[p]);
+  assert.ok(f2['xl/drawings/drawing1.xml'] && f2['xl/drawings/drawing2.xml'], 'two distinct drawing parts');
+  assert.ok(f2['xl/charts/chart1.xml'] && f2['xl/charts/chart2.xml'], 'two chart parts');
+  // each sheet references a DIFFERENT drawing target
+  const relA = d2('xl/worksheets/_rels/sheet1.xml.rels');
+  const relB = d2('xl/worksheets/_rels/sheet2.xml.rels');
+  const tgtA = (relA.match(/Target="\.\.\/drawings\/(drawing\d+\.xml)"/) || [])[1];
+  const tgtB = (relB.match(/Target="\.\.\/drawings\/(drawing\d+\.xml)"/) || [])[1];
+  assert.ok(tgtA && tgtB && tgtA !== tgtB, 'sheets point to distinct drawings (' + tgtA + ' vs ' + tgtB + ')');
+  // each drawing links to exactly one chart, and they are different charts
+  const chA = (d2('xl/drawings/_rels/' + tgtA + '.rels').match(/charts\/(chart\d+\.xml)/) || [])[1];
+  const chB = (d2('xl/drawings/_rels/' + tgtB + '.rels').match(/charts\/(chart\d+\.xml)/) || [])[1];
+  assert.ok(chA && chB && chA !== chB, 'drawings link to distinct charts (' + chA + ' vs ' + chB + ')');
+  // content types must cover BOTH drawings
+  assert.equal((d2('[Content_Types].xml').match(/officedocument\.drawing\+xml/g) || []).length, 2, 'two drawing content-types');
   console.log('NativeChartInject: all assertions passed');
 })().catch((e) => { console.error(e); process.exit(1); });

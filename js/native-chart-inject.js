@@ -96,6 +96,10 @@
         var di = nextIndex(files, 'xl/drawings/drawing', '.xml');
         var drawPath = 'xl/drawings/drawing' + di + '.xml';
         var drawRels = 'xl/drawings/_rels/drawing' + di + '.xml.rels';
+        // Reserve the drawing part NOW (overwritten at the end) so nextIndex()
+        // sees it when allocating the next sheet's drawing — otherwise a second
+        // sheet reuses drawing1 and its chart rel is clobbered.
+        files[drawPath] = enc('');
         files[drawRels] = enc('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
           '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>');
         addContentTypeOverride(files, '/' + drawPath, 'application/vnd.openxmlformats-officedocument.drawing+xml');
